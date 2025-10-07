@@ -2,10 +2,8 @@ name: 🛡️ StellarSpeak Site Guardian
 
 on:
   schedule:
-    # فحص كل 5 ساعات
-    - cron: '0 */5 * * *'
-    # فحص سريع كل ساعة في أوقات الذروة (8ص - 10م)
-    - cron: '0 8-22 * * *'
+    # فحص كل 12 ساعة (منتصف الليل والظهر بتوقيت UTC)
+    - cron: '0 */12 * * *'
   
   workflow_dispatch:
     inputs:
@@ -69,50 +67,81 @@ jobs:
           const passed = stats.passed || 0;
           const failed = stats.failed || 0;
           const skipped = stats.skipped || 0;
+          const duration = results.duration ? (results.duration / 1000).toFixed(2) : '0';
           
           const status = failed > 0 ? '🔴 FAILED' : '✅ PASSED';
           const timestamp = new Date().toLocaleString('ar-SA', {timeZone: 'Asia/Riyadh'});
+          const runNumber = '${{ github.run_number }}';
+          const runId = '${{ github.run_id }}';
+          const repoName = '${{ github.repository }}';
+          const actor = '${{ github.actor }}';
+          const eventName = '${{ github.event_name }}';
           
-          let message = '🛡️ **StellarSpeak Site Guardian Report**\n\n';
-          message += '📊 **نتائج الفحص:**\n';
-          message += '✅ نجح: ' + passed + ' اختبار\n';
-          message += '❌ فشل: ' + failed + ' اختبار\n';
-          message += '⏭️ تم تخطيه: ' + skipped + ' اختبار\n';
-          message += '📈 المجموع: ' + total + ' اختبار\n\n';
-          message += '⏰ **الوقت:** ' + timestamp + '\n';
-          message += '🌐 **الموقع:** https://www.stellarspeak.online\n\n';
+          let message = '🛡️ *StellarSpeak Site Guardian Report*\n';
+          message += '━━━━━━━━━━━━━━━━━━━━━━\n\n';
+          
+          message += '📊 *نتائج الفحص:*\n';
+          message += '• الحالة: ' + status + '\n';
+          message += '• نجح: ✅ ' + passed + ' اختبار\n';
+          message += '• فشل: ❌ ' + failed + ' اختبار\n';
+          message += '• تم تخطيه: ⏭️ ' + skipped + ' اختبار\n';
+          message += '• المجموع: 📈 ' + total + ' اختبار\n';
+          message += '• مدة التنفيذ: ⏱️ ' + duration + ' ثانية\n\n';
+          
+          message += '🔍 *معلومات الفحص:*\n';
+          message += '• الموقع: 🌐 [stellarspeak.online](https://www.stellarspeak.online)\n';
+          message += '• الوقت: 🕐 ' + timestamp + '\n';
+          message += '• نوع التشغيل: 🔄 ' + (eventName === 'schedule' ? 'تلقائي (كل 12 ساعة)' : 'يدوي') + '\n';
+          message += '• رقم التشغيل: #' + runNumber + '\n\n';
           
           if (failed > 0) {
-            message += '⚠️ **تحذير:** تم اكتشاف ' + failed + ' مشكلة تحتاج فحص!\n';
-            message += '🔍 **يُنصح بمراجعة التقرير المفصل**\n\n';
+            message += '⚠️ *تحذير - مشاكل مكتشفة:*\n';
+            message += '━━━━━━━━━━━━━━━━━━━━━━\n';
+            message += '🔴 تم اكتشاف *' + failed + ' مشكلة* تحتاج فحص فوري!\n';
+            message += '🔍 يُنصح بمراجعة التقرير المفصل للحصول على التفاصيل الكاملة\n';
+            message += '⚡ قد تؤثر هذه المشاكل على تجربة المستخدمين\n\n';
           } else if (passed > 0) {
-            message += '✅ **ممتاز! الموقع يعمل بشكل طبيعي**\n';
-            message += '🚀 **جميع الاختبارات نجحت بلا مشاكل**\n\n';
+            message += '✅ *ممتاز - الموقع يعمل بشكل مثالي!*\n';
+            message += '━━━━━━━━━━━━━━━━━━━━━━\n';
+            message += '🚀 جميع الاختبارات (' + passed + ') نجحت بلا أي مشاكل\n';
+            message += '💯 الأداء والوظائف تعمل بكفاءة عالية\n';
+            message += '🎯 لا حاجة لأي إجراء في الوقت الحالي\n\n';
           } else {
-            message += '⚠️ **تحذير:** لم يتم تشغيل اختبارات، قد تكون هناك مشكلة تقنية\n\n';
+            message += '⚠️ *تحذير - لم يتم تشغيل اختبارات:*\n';
+            message += '━━━━━━━━━━━━━━━━━━━━━━\n';
+            message += '🔧 قد تكون هناك مشكلة تقنية في نظام الفحص\n';
+            message += '👨‍💻 يُنصح بفحص السكريبت والإعدادات\n\n';
           }
           
-          message += '📋 [عرض التقرير التفصيلي](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})';
-          
-          console.log('TELEGRAM_MESSAGE<<EOF');
-          console.log(message);
-          console.log('EOF');
+          message += '📋 *روابط مفيدة:*\n';
+          message += '• [عرض التقرير التفصيلي](${{ github.server_url }}/${{ github.repository }}/actions/runs/' + runId + ')\n';
+          message += '• [جميع التشغيلات السابقة](${{ github.server_url }}/${{ github.repository }}/actions)\n';
+          message += '• [الموقع المباشر](https://www.stellarspeak.online)\n';
           
           fs.writeFileSync('telegram-message.txt', message);
+          console.log('status=' + status);
+          console.log('passed=' + passed);
+          console.log('failed=' + failed);
+          console.log('total=' + total);
           
         } catch (error) {
           const errorTime = new Date().toLocaleString('ar-SA', {timeZone: 'Asia/Riyadh'});
-          const errorMessage = '🚨 **خطأ في فحص موقع StellarSpeak**\n\n' +
-            '❌ **المشكلة:** تعذر تحليل نتائج الفحص\n' +
-            '⏰ **الوقت:** ' + errorTime + '\n' +
-            '🔧 **مطلوب:** فحص يدوي للمشكلة\n\n' +
-            '📋 [عرض تفاصيل الخطأ](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})';
+          const runId = '${{ github.run_id }}';
           
-          console.log('TELEGRAM_MESSAGE<<EOF');
-          console.log(errorMessage);
-          console.log('EOF');
+          const errorMessage = '🚨 *خطأ في فحص موقع StellarSpeak*\n' +
+            '━━━━━━━━━━━━━━━━━━━━━━\n\n' +
+            '❌ *المشكلة:* تعذر تحليل نتائج الفحص\n' +
+            '⏰ *الوقت:* ' + errorTime + '\n' +
+            '🔧 *السبب المحتمل:* خطأ في معالجة البيانات\n\n' +
+            '📋 *الإجراء المطلوب:*\n' +
+            '• فحص يدوي للموقع\n' +
+            '• مراجعة سجلات GitHub Actions\n' +
+            '• التحقق من إعدادات السكريبت\n\n' +
+            '🔗 *التفاصيل:*\n' +
+            '[عرض تفاصيل الخطأ الكاملة](${{ github.server_url }}/${{ github.repository }}/actions/runs/' + runId + ')';
           
           fs.writeFileSync('telegram-message.txt', errorMessage);
+          console.log('status=ERROR');
         }
         " >> $GITHUB_ENV
       continue-on-error: true
@@ -123,22 +152,37 @@ jobs:
         if [ -f "telegram-message.txt" ]; then
           MESSAGE=$(cat telegram-message.txt)
         else
-          MESSAGE="🛡️ **StellarSpeak Site Check مكتمل**
+          TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+          MESSAGE="🛡️ *StellarSpeak Site Check مكتمل*
+          ━━━━━━━━━━━━━━━━━━━━━━
           
-        ⏰ **الوقت:** $(date '+%Y-%m-%d %H:%M:%S')
-        🌐 **الموقع:** https://www.stellarspeak.online
-        📋 **التفاصيل:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ⏰ *الوقت:* $TIMESTAMP UTC
+          🌐 *الموقع:* [stellarspeak.online](https://www.stellarspeak.online)
+          🔄 *الحالة:* تم إكمال الفحص
+          
+          📋 [عرض التفاصيل الكاملة](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
         fi
         
-        # إرسال الرسالة عبر Telegram
-        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+        # إرسال الرسالة عبر Telegram مع معالجة الأخطاء
+        RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
+          "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
           -H "Content-Type: application/json" \
           -d "{
             \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-            \"text\": \"$MESSAGE\",
+            \"text\": $(echo "$MESSAGE" | jq -Rs .),
             \"parse_mode\": \"Markdown\",
             \"disable_web_page_preview\": true
-          }" || echo "⚠️ فشل في إرسال رسالة Telegram"
+          }")
+        
+        HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | cut -d':' -f2)
+        
+        if [ "$HTTP_CODE" = "200" ]; then
+          echo "✅ تم إرسال رسالة Telegram بنجاح"
+        else
+          echo "⚠️ فشل في إرسال رسالة Telegram (HTTP Code: $HTTP_CODE)"
+          echo "$RESPONSE"
+        fi
+      continue-on-error: true
     
     - name: 📊 Upload Test Reports
       uses: actions/upload-artifact@v4
@@ -152,33 +196,50 @@ jobs:
           telegram-message.txt
         retention-days: 30
 
-    # إرسال تقرير مفصل عند الفشل
+    # إرسال تقرير مفصل عند الفشل الحرج
     - name: 🚨 Send Detailed Alert on Critical Failure
       if: failure()
       run: |
-        ALERT_MESSAGE="🚨 **تنبيه عاجل - مشكلة حرجة في الموقع**
-
-        ❌ **حالة الفحص:** فشل كامل
-        🔍 **المشكلة:** خطأ تقني في عملية الفحص نفسها
-        ⏰ **الوقت:** $(date '+%Y-%m-%d %H:%M:%S')
+        TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+        ALERT_MESSAGE="🚨 *تنبيه عاجل - مشكلة حرجة في الموقع*
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
-        🌐 **الموقع:** https://www.stellarspeak.online
-        📋 **السبب المحتمل:**
-        • مشكلة في الاتصال بالموقع
-        • خطأ في سكريبت الفحص
-        • مشكلة في الخادم
-
-        🔧 **مطلوب إجراء فوري:**
-        1️⃣ فحص الموقع يدوياً
-        2️⃣ مراجعة سجلات الخادم
-        3️⃣ التأكد من حالة الموقع
-
-        📋 [عرض تفاصيل الخطأ الكاملة](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+        ❌ *حالة الفحص:* فشل كامل في عملية الفحص
+        🔍 *نوع المشكلة:* خطأ تقني حرج
+        ⏰ *وقت الاكتشاف:* $TIMESTAMP UTC
+        🌐 *الموقع المتأثر:* [stellarspeak.online](https://www.stellarspeak.online)
+        
+        📋 *الأسباب المحتملة:*
+        • 🔌 مشكلة في الاتصال بالموقع أو الخادم
+        • ⚙️ خطأ في سكريبت الفحص أو التبعيات
+        • 🌐 الموقع غير متاح أو بطيء جداً
+        • 🔐 مشكلة في بيانات المصادقة
+        • 💾 نفاد موارد الخادم
+        
+        🔧 *الإجراءات المطلوبة فوراً:*
+        1️⃣ فحص الموقع يدوياً من المتصفح
+        2️⃣ مراجعة سجلات الخادم (Server Logs)
+        3️⃣ التحقق من حالة استضافة الموقع
+        4️⃣ فحص إعدادات GitHub Actions
+        5️⃣ مراجعة السكريبت والتبعيات
+        
+        📊 *معلومات إضافية:*
+        • رقم التشغيل: #${{ github.run_number }}
+        • نوع الحدث: ${{ github.event_name }}
+        • الفرع: ${{ github.ref_name }}
+        
+        🔗 *روابط مهمة:*
+        • [عرض تفاصيل الخطأ الكاملة](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+        • [جميع التشغيلات](${{ github.server_url }}/${{ github.repository }}/actions)
+        • [الموقع المباشر](https://www.stellarspeak.online)
+        
+        ⚠️ *ملاحظة:* يُنصى بحل المشكلة في أقرب وقت ممكن لتجنب تأثيرها على المستخدمين"
 
         curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
           -H "Content-Type: application/json" \
           -d "{
             \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-            \"text\": \"$ALERT_MESSAGE\",
-            \"parse_mode\": \"Markdown\"
-          }"
+            \"text\": $(echo "$ALERT_MESSAGE" | jq -Rs .),
+            \"parse_mode\": \"Markdown\",
+            \"disable_web_page_preview\": false
+          }" || echo "⚠️ فشل إرسال التنبيه العاجل"
