@@ -20,9 +20,9 @@ on:
 jobs:
   site-monitoring:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # ⬅️ إضافة timeout للـ job بأكمله
+    timeout-minutes: 30
     container:
-      image: mcr.microsoft.com/playwright:v1.49.0-jammy  # ⬅️ استخدام Docker image جاهز
+      image: mcr.microsoft.com/playwright:v1.49.0-jammy
     
     steps:
     - name: 📥 Checkout Code
@@ -33,7 +33,7 @@ jobs:
       with:
         node-version: '20'
     
-    - name: 🗂️ Cache Playwright Browsers  # ⬅️ إضافة cache لتسريع التثبيت
+    - name: 🗂️ Cache Playwright Browsers
       uses: actions/cache@v4
       id: playwright-cache
       with:
@@ -45,9 +45,7 @@ jobs:
     
     - name: 📦 Install Dependencies
       run: npm install -D @playwright/test
-      timeout-minutes: 5  # ⬅️ تقليل timeout لأن npm أسرع
-    
-    # ⬅️ لا حاجة لتثبيت المتصفح لأنه موجود في Docker image
+      timeout-minutes: 5
     
     - name: 🛡️ Run Site Guardian Tests
       id: tests
@@ -55,7 +53,7 @@ jobs:
         npx playwright test --reporter=json > test-results.json 2>&1 || echo "Tests completed"
         echo "tests_completed=true" >> $GITHUB_OUTPUT
       env:
-        SITE_URL: https://www.stellarspeak.online  # ⬅️ إصلاح URL
+        SITE_URL: https://www.stellarspeak.online
         TEST_TYPE: ${{ github.event.inputs.test_type || 'full' }}
         MONITOR_EMAIL: ${{ secrets.MONITOR_EMAIL }}
         MONITOR_PASSWORD: ${{ secrets.MONITOR_PASSWORD }}
@@ -159,7 +157,7 @@ jobs:
         "
       continue-on-error: true
     
-    - name: 🔍 Debug Secrets  # ⬅️ إضافة خطوة للتحقق من Secrets
+    - name: 🔍 Debug Secrets
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "🔍 Checking Telegram Secrets..."
@@ -183,66 +181,13 @@ jobs:
     
     - name: 📤 Send Telegram Notification
       if: always()
-      run: |
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "📤 Preparing Telegram notification..."
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        
-        # ⬅️ التحقق من وجود Secrets قبل الإرسال
-        if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
-          echo "❌ TELEGRAM_BOT_TOKEN is not configured"
-          echo "⚠️ Skipping Telegram notification"
-          exit 0
-        fi
-        
-        if [ -z "${{ secrets.TELEGRAM_CHAT_ID }}" ]; then
-          echo "❌ TELEGRAM_CHAT_ID is not configured"
-          echo "⚠️ Skipping Telegram notification"
-          exit 0
-        fi
-        
-        # ⬅️ تحضير الرسالة
-        if [ -f "telegram-message.txt" ]; then
-          MESSAGE=$(cat telegram-message.txt)
-          echo "✅ Message loaded from telegram-message.txt"
-        else
-          TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-          MESSAGE="🛡️ *StellarSpeak Site Check مكتمل*\\n\\n⏰ *الوقت:* $TIMESTAMP UTC\\n🌐 *الموقع:* [stellarspeak.online](https://www.stellarspeak.online)\\n🔄 *الحالة:* تم إكمال الفحص\\n\\n📋 [عرض التفاصيل الكاملة](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          echo "⚠️ Using fallback message"
-        fi
-        
-        # ⬅️ إرسال الرسالة مع تسجيل مفصل
-        echo "📡 Sending message to Telegram..."
-        HTTP_RESPONSE=$(curl -w "\\n%{http_code}" -s -X POST \
-          "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-          -H "Content-Type: application/json" \
-          -d "{
-            \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-            \"text\": $(echo "$MESSAGE" | jq -Rs .),
-            \"parse_mode\": \"Markdown\",
-            \"disable_web_page_preview\": true
-          }")
-        
-        HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
-        RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | head -n-1)
-        
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "📊 Telegram API Response:"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "HTTP Status Code: $HTTP_CODE"
-        echo "Response Body: $RESPONSE_BODY"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        
-        if [ "$HTTP_CODE" = "200" ]; then
-          echo "✅ رسالة Telegram أُرسلت بنجاح!"
-        else
-          echo "❌ فشل في إرسال رسالة Telegram"
-          echo "🔍 Please check:"
-          echo "  1. Bot token is valid"
-          echo "  2. Chat ID is correct"
-          echo "  3. Bot has been started with /start command"
-          echo "  4. Bot has permission to send messages"
-        fi
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ secrets.TELEGRAM_CHAT_ID }}
+        token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        message_file: telegram-message.txt
+        format: markdown
+        disable_web_page_preview: true
       continue-on-error: true
     
     - name: 📊 Upload Test Reports
@@ -257,28 +202,45 @@ jobs:
           telegram-message.txt
         retention-days: 30
 
-    # إرسال تقرير مفصل عند الفشل الحرج
     - name: 🚨 Send Detailed Alert on Critical Failure
       if: failure()
-      run: |
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "🚨 Critical failure detected - sending alert..."
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        
-        # ⬅️ التحقق من Secrets
-        if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] || [ -z "${{ secrets.TELEGRAM_CHAT_ID }}" ]; then
-          echo "❌ Telegram not configured - skipping alert"
-          exit 0
-        fi
-        
-        TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-        ALERT_MESSAGE="🚨 *تنبيه عاجل - مشكلة حرجة في الموقع*\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n\\n❌ *حالة الفحص:* فشل كامل في عملية الفحص\\n🔍 *نوع المشكلة:* خطأ تقني حرج\\n⏰ *وقت الاكتشاف:* $TIMESTAMP UTC\\n🌐 *الموقع المتأثر:* [stellarspeak.online](https://www.stellarspeak.online)\\n\\n📋 *الأسباب المحتملة:*\\n• 🔌 مشكلة في الاتصال بالموقع أو الخادم\\n• ⚙️ خطأ في سكريبت الفحص أو التبعيات\\n• 🌐 الموقع غير متاح أو بطيء جداً\\n• 🔐 مشكلة في بيانات المصادقة\\n• 💾 نفاد موارد الخادم\\n\\n🔧 *الإجراءات المطلوبة فوراً:*\\n1️⃣ فحص الموقع يدوياً من المتصفح\\n2️⃣ مراجعة سجلات الخادم (Server Logs)\\n3️⃣ التحقق من حالة استضافة الموقع\\n4️⃣ فحص إعدادات GitHub Actions\\n5️⃣ مراجعة السكريبت والتبعيات\\n\\n📊 *معلومات إضافية:*\\n• رقم التشغيل: #${{ github.run_number }}\\n• نوع الحدث: ${{ github.event_name }}\\n• الفرع: ${{ github.ref_name }}\\n\\n🔗 *روابط مهمة:*\\n• [عرض تفاصيل الخطأ الكاملة](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\\n• [جميع التشغيلات](${{ github.server_url }}/${{ github.repository }}/actions)\\n• [الموقع المباشر](https://www.stellarspeak.online)\\n\\n⚠️ *ملاحظة:* يُنصح بحل المشكلة في أقرب وقت ممكن لتجنب تأثيرها على المستخدمين"
-
-        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-          -H "Content-Type: application/json" \
-          -d "{
-            \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-            \"text\": $(echo "$ALERT_MESSAGE" | jq -Rs .),
-            \"parse_mode\": \"Markdown\",
-            \"disable_web_page_preview\": false
-          }" && echo "✅ Critical alert sent" || echo "⚠️ فشل إرسال التنبيه العاجل"
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ secrets.TELEGRAM_CHAT_ID }}
+        token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        format: markdown
+        message: |
+          🚨 *تنبيه عاجل - مشكلة حرجة في الموقع*
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          
+          ❌ *حالة الفحص:* فشل كامل في عملية الفحص
+          🔍 *نوع المشكلة:* خطأ تقني حرج
+          ⏰ *وقت الاكتشاف:* ${{ github.event.head_commit.timestamp }}
+          🌐 *الموقع المتأثر:* [stellarspeak.online](https://www.stellarspeak.online)
+          
+          📋 *الأسباب المحتملة:*
+          • 🔌 مشكلة في الاتصال بالموقع أو الخادم
+          • ⚙️ خطأ في سكريبت الفحص أو التبعيات
+          • 🌐 الموقع غير متاح أو بطيء جداً
+          • 🔐 مشكلة في بيانات المصادقة
+          • 💾 نفاد موارد الخادم
+          
+          🔧 *الإجراءات المطلوبة فوراً:*
+          1️⃣ فحص الموقع يدوياً من المتصفح
+          2️⃣ مراجعة سجلات الخادم (Server Logs)
+          3️⃣ التحقق من حالة استضافة الموقع
+          4️⃣ فحص إعدادات GitHub Actions
+          5️⃣ مراجعة السكريبت والتبعيات
+          
+          📊 *معلومات إضافية:*
+          • رقم التشغيل: #${{ github.run_number }}
+          • نوع الحدث: ${{ github.event_name }}
+          • الفرع: ${{ github.ref_name }}
+          
+          🔗 *روابط مهمة:*
+          • [عرض تفاصيل الخطأ الكاملة](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          • [جميع التشغيلات](${{ github.server_url }}/${{ github.repository }}/actions)
+          • [الموقع المباشر](https://www.stellarspeak.online)
+          
+          ⚠️ *ملاحظة:* يُنصح بحل المشكلة في أقرب وقت ممكن لتجنب تأثيرها على المستخدمين
+      continue-on-error: true
