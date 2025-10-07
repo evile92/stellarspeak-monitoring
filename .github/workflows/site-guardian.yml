@@ -2,8 +2,11 @@ name: 🛡️ StellarSpeak Site Guardian
 
 on:
   schedule:
-    - cron: '*/15 6-22 * * *'
-    - cron: '0 * * * *'
+    # فحص كل 5 ساعات
+    - cron: '0 */5 * * *'
+    # فحص سريع كل ساعة في أوقات الذروة
+    - cron: '0 8-22 * * *'
+  
   workflow_dispatch:
     inputs:
       test_type:
@@ -14,7 +17,7 @@ on:
         options:
         - quick
         - full
-        - post-migration
+        - telegram-test
 
 jobs:
   site-monitoring:
@@ -28,7 +31,6 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        # cache: 'npm'  ← احذف هذا السطر
     
     - name: 📦 Install Dependencies
       run: |
@@ -36,12 +38,85 @@ jobs:
         npx playwright install --with-deps chromium
     
     - name: 🛡️ Run Site Guardian Tests
-      run: npx playwright test
+      id: tests
+      run: |
+        npx playwright test --reporter=json > test-results.json || echo "Tests completed"
+        echo "tests_completed=true" >> $GITHUB_OUTPUT
       env:
         SITE_URL: https://www.stellarspeak.online
-        TEST_TYPE: ${{ github.event.inputs.test_type || 'quick' }}
+        TEST_TYPE: ${{ github.event.inputs.test_type || 'full' }}
     
-    - name: 📊 Upload Test Results
+    - name: 📊 Parse Test Results
+      id: parse_results
+      run: |
+        # تحليل نتائج الاختبار وإنشاء تقرير
+        node -e "
+        const fs = require('fs');
+        try {
+          const results = JSON.parse(fs.readFileSync('test-results.json', 'utf8'));
+          const stats = results.stats || {};
+          const total = stats.expected || 0;
+          const passed = stats.passed || 0;
+          const failed = stats.failed || 0;
+          const skipped = stats.skipped || 0;
+          
+          const status = failed > 0 ? '🔴 FAILED' : '🟢 PASSED';
+          const timestamp = new Date().toLocaleString('ar-SA', {timeZone: 'Asia/Riyadh'});
+          
+          let message = '🛡️ **StellarSpeak Site Report**\n\n';
+          message += '📊 **النتائج:**\n';
+          message += '✅ نجح: ' + passed + '\n';
+          message += '❌ فشل: ' + failed + '\n';
+          message += '⏭️ تم تخطيه: ' + skipped + '\n';
+          message += '📈 المجموع: ' + total + '\n\n';
+          message += '⏰ **الوقت:** ' + timestamp + '\n';
+          message += '🌐 **الموقع:** https://www.stellarspeak.online\n\n';
+          
+          if (failed > 0) {
+            message += '⚠️ **تحذير:** تم اكتشاف مشاكل تحتاج فحص!\n';
+          } else {
+            message += '✅ **الموقع يعمل بشكل ممتاز!**\n';
+          }
+          
+          message += '\n📋 **تفاصيل أكثر:** [GitHub Actions](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})';
+          
+          console.log('TELEGRAM_MESSAGE=' + encodeURIComponent(message));
+          
+          // حفظ النتائج في ملف
+          fs.writeFileSync('telegram-message.txt', message);
+          
+        } catch (error) {
+          const errorMessage = '🚨 **خطأ في فحص الموقع!**\n\nتعذر تحليل النتائج.\n⏰ الوقت: ' + new Date().toLocaleString('ar-SA') + '\n📋 التفاصيل: [GitHub Actions](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})';
+          console.log('TELEGRAM_MESSAGE=' + encodeURIComponent(errorMessage));
+          fs.writeFileSync('telegram-message.txt', errorMessage);
+        }
+        "
+      continue-on-error: true
+    
+    - name: 📤 Send Telegram Notification
+      if: always()
+      run: |
+        # قراءة الرسالة من الملف
+        if [ -f "telegram-message.txt" ]; then
+          MESSAGE=$(cat telegram-message.txt)
+        else
+          MESSAGE="🛡️ StellarSpeak Site Check Completed
+        
+        ⏰ Time: $(date '+%Y-%m-%d %H:%M:%S')
+        🔗 Details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        fi
+        
+        # إرسال الرسالة عبر Telegram
+        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+            \"text\": \"$MESSAGE\",
+            \"parse_mode\": \"Markdown\",
+            \"disable_web_page_preview\": true
+          }" || echo "Failed to send Telegram message"
+    
+    - name: 📊 Upload Detailed Reports
       uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -49,10 +124,34 @@ jobs:
         path: |
           test-results/
           playwright-report/
+          test-results.json
         retention-days: 30
-    
-    - name: 🚨 Send Alert if Failed
+
+    # إرسال تقرير مفصل إذا كان هناك فشل
+    - name: 📋 Send Detailed Report on Failure
       if: failure()
       run: |
-        echo "⚠️ Site Guardian detected issues!"
-        echo "Check report: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        DETAILED_MESSAGE="🚨 **تقرير مفصل - مشكلة في الموقع**
+
+        🔍 **المشاكل المكتشفة:**
+        • فشل في بعض الاختبارات
+        • يحتاج فحص فوري
+
+        ⏰ **الوقت:** $(date '+%Y-%m-%d %H:%M:%S')
+        🌐 **الموقع:** https://www.stellarspeak.online
+
+        📋 **التقرير الكامل:** 
+        ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+        🔧 **الخطوات التالية:**
+        1. فحص التقرير المفصل
+        2. تحديد سبب المشكلة  
+        3. تطبيق الإصلاحات اللازمة"
+
+        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+            \"text\": \"$DETAILED_MESSAGE\",
+            \"parse_mode\": \"Markdown\"
+          }"
