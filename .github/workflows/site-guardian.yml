@@ -1,231 +1,184 @@
-import { test, expect } from '@playwright/test';
+name: 🛡️ StellarSpeak Site Guardian
 
-const SITE_URL = process.env.SITE_URL || 'https://www.stellarspeak.online';
-const TEST_TYPE = process.env.TEST_TYPE || 'quick';
-const MONITOR_EMAIL = process.env.MONITOR_EMAIL;
-const MONITOR_PASSWORD = process.env.MONITOR_PASSWORD;
+on:
+  schedule:
+    # فحص كل 5 ساعات
+    - cron: '0 */5 * * *'
+    # فحص سريع كل ساعة في أوقات الذروة (8ص - 10م)
+    - cron: '0 8-22 * * *'
+  
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'نوع الفحص'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+        - quick
+        - full
+        - telegram-test
 
-// 🏠 اختبارات الصفحات العامة
-test.describe('🏠 Public Pages Health Check', () => {
-  test('should load all public pages successfully', async ({ page }) => {
-    const publicPages = [
-      { url: '/', name: 'Homepage' },
-      { url: '/grammar', name: 'Grammar Guide' },
-      { url: '/vocabulary-guide', name: 'Vocabulary Guide' },
-      { url: '/reading', name: 'Reading Center' },
-      { url: '/blog', name: 'Blog' },
-      { url: '/about', name: 'About' },
-      { url: '/contact', name: 'Contact' }
-    ];
+jobs:
+  site-monitoring:
+    runs-on: ubuntu-latest
     
-    for (const pageInfo of publicPages) {
-      const startTime = Date.now();
-      await page.goto(`${SITE_URL}${pageInfo.url}`);
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
       
-      await expect(page.locator('h1, h2')).toBeVisible();
-      
-      const loadTime = Date.now() - startTime;
-      console.log(`✅ ${pageInfo.name}: ${loadTime}ms`);
-      expect(loadTime).toBeLessThan(8000);
-    }
-  });
-});
-
-// 🔐 اختبارات المصادقة مع الحساب الدائم
-test.describe('🔐 Authentication with Monitor Account', () => {
-  test('should login with monitor account', async ({ page }) => {
-    console.log('🔐 Testing login with monitor account...');
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
     
-    if (!MONITOR_EMAIL || !MONITOR_PASSWORD) {
-      console.log('⚠️ Monitor credentials not configured');
-      return;
-    }
+    - name: 📦 Install Dependencies
+      run: |
+        npm install -D @playwright/test
+        npx playwright install --with-deps chromium
+      timeout-minutes: 10
     
-    await page.goto(`${SITE_URL}/login`);
+    - name: 🛡️ Run Site Guardian Tests
+      id: tests
+      run: |
+        npx playwright test --reporter=json > test-results.json 2>&1 || echo "Tests completed"
+        echo "tests_completed=true" >> $GITHUB_OUTPUT
+      env:
+        SITE_URL: https://www.stellarspeak.online
+        TEST_TYPE: ${{ github.event.inputs.test_type || 'full' }}
+        MONITOR_EMAIL: ${{ secrets.MONITOR_EMAIL }}
+        MONITOR_PASSWORD: ${{ secrets.MONITOR_PASSWORD }}
+      timeout-minutes: 15
     
-    // املأ نموذج تسجيل الدخول
-    await page.fill('input[type="email"], input[name="email"]', MONITOR_EMAIL);
-    await page.fill('input[type="password"], input[name="password"]', MONITOR_PASSWORD);
-    
-    // اضغط زر الدخول
-    await page.click('button[type="submit"], button:has-text("دخول"), button:has-text("تسجيل الدخول")');
-    
-    // انتظار التحميل
-    await page.waitForTimeout(3000);
-    
-    // تحقق من نجاح الدخول
-    const currentUrl = page.url();
-    const hasLoggedIn = currentUrl.includes('/dashboard') || 
-                       currentUrl === SITE_URL + '/' ||
-                       await page.locator('text=مرحباً, text=لوحة التحكم').isVisible();
-    
-    console.log(`🔐 Login result: ${hasLoggedIn ? 'SUCCESS' : 'FAILED'}`);
-    console.log(`📍 Current URL: ${currentUrl}`);
-    
-    expect(hasLoggedIn).toBeTruthy();
-  });
-});
-
-// 📚 اختبارات الدروس مع المصادقة
-test.describe('📚 Protected Content Access', () => {
-  test.beforeEach(async ({ page }) => {
-    // تسجيل الدخول قبل كل اختبار
-    if (MONITOR_EMAIL && MONITOR_PASSWORD) {
-      await page.goto(`${SITE_URL}/login`);
-      await page.fill('input[type="email"], input[name="email"]', MONITOR_EMAIL);
-      await page.fill('input[type="password"], input[name="password"]', MONITOR_PASSWORD);
-      await page.click('button[type="submit"], button:has-text("دخول"), button:has-text("تسجيل الدخول")');
-      await page.waitForTimeout(3000);
-    }
-  });
-
-  test('should access dashboard after login', async ({ page }) => {
-    console.log('📊 Testing dashboard access...');
-    
-    // الذهاب للوحة التحكم
-    await page.goto(`${SITE_URL}/dashboard`);
-    await page.waitForTimeout(2000);
-    
-    // تحقق من وجود محتوى لوحة التحكم
-    const hasDashboard = await page.locator('h1, h2, .level-card, .course-card').isVisible();
-    
-    console.log(`📊 Dashboard accessible: ${hasDashboard}`);
-    expect(hasDashboard).toBeTruthy();
-  });
-
-  test('should access lesson content', async ({ page }) => {
-    console.log('📖 Testing lesson access...');
-    
-    // الذهاب للوحة التحكم أولاً
-    await page.goto(`${SITE_URL}/dashboard`);
-    await page.waitForTimeout(2000);
-    
-    // ابحث عن مستوى أو درس للضغط عليه
-    const levelButton = page.locator('.level-card, button:has-text("A1"), button:has-text("ابدأ")').first();
-    
-    if (await levelButton.isVisible()) {
-      await levelButton.click();
-      await page.waitForTimeout(3000);
-      
-      // ابحث عن دروس
-      const lessonItem = page.locator('.lesson-item, .lesson-card, button:has-text("درس")').first();
-      
-      if (await lessonItem.isVisible()) {
-        await lessonItem.click();
-        await page.waitForTimeout(3000);
-        
-        // تحقق من تحميل محتوى الدرس
-        const hasLessonContent = await page.locator('h1, h2, .lesson-content').isVisible();
-        console.log(`📖 Lesson content loaded: ${hasLessonContent}`);
-        
-        expect(hasLessonContent).toBeTruthy();
-      } else {
-        console.log('⚠️ No lesson items found');
-      }
-    } else {
-      console.log('⚠️ No level buttons found');
-    }
-  });
-
-  test('should test certificate access', async ({ page }) => {
-    console.log('🏆 Testing certificate functionality...');
-    
-    // محاولة الوصول لصفحة شهادة (سيعيد توجيه إذا لم تكن مكتسبة)
-    await page.goto(`${SITE_URL}/certificate/A1`);
-    await page.waitForTimeout(2000);
-    
-    // تحقق من الاستجابة المناسبة
-    const hasRedirect = !page.url().includes('/certificate/');
-    const hasErrorMessage = await page.locator('text=خطأ, text=غير مكتسبة').isVisible();
-    const hasCertificate = await page.locator('text=شهادة, text=Certificate').isVisible();
-    
-    console.log(`🏆 Certificate handling: Redirect=${hasRedirect}, Error=${hasErrorMessage}, Certificate=${hasCertificate}`);
-    
-    // أي استجابة منطقية تعتبر نجاح
-    expect(hasRedirect || hasErrorMessage || hasCertificate).toBeTruthy();
-  });
-});
-
-// 📱 اختبارات الاستجابة
-test.describe('📱 Mobile Responsiveness', () => {
-  test('should work on mobile devices', async ({ browser }) => {
-    const context = await browser.newContext({
-      viewport: { width: 375, height: 667 },
-      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)'
-    });
-    
-    const page = await context.newPage();
-    
-    // اختبار الصفحة الرئيسية
-    await page.goto(SITE_URL);
-    await expect(page.locator('h1')).toBeVisible();
-    
-    // اختبار صفحة أخرى
-    await page.goto(`${SITE_URL}/grammar`);
-    await expect(page.locator('h1, h2')).toBeVisible();
-    
-    console.log('📱 Mobile responsiveness: PASSED');
-    await context.close();
-  });
-});
-
-// ⚡ اختبارات الأداء
-test.describe('⚡ Performance Monitoring', () => {
-  test('should maintain good performance', async ({ page }) => {
-    const performanceTests = [
-      { url: '/', target: 3000 },
-      { url: '/grammar', target: 4000 },
-      { url: '/vocabulary-guide', target: 4000 },
-      { url: '/blog', target: 5000 }
-    ];
-    
-    for (const testCase of performanceTests) {
-      const startTime = Date.now();
-      await page.goto(`${SITE_URL}${testCase.url}`);
-      await page.waitForLoadState('networkidle');
-      
-      const loadTime = Date.now() - startTime;
-      console.log(`⏱️ ${testCase.url}: ${loadTime}ms (target: ${testCase.target}ms)`);
-      
-      expect(loadTime).toBeLessThan(testCase.target);
-    }
-  });
-});
-
-// 🔍 اختبارات متقدمة للمحتوى المحمي
-if (TEST_TYPE === 'full' || TEST_TYPE === 'post-migration') {
-  test.describe('🔍 Advanced Protected Content Tests', () => {
-    test.beforeEach(async ({ page }) => {
-      // تسجيل الدخول
-      if (MONITOR_EMAIL && MONITOR_PASSWORD) {
-        await page.goto(`${SITE_URL}/login`);
-        await page.fill('input[type="email"]', MONITOR_EMAIL);
-        await page.fill('input[type="password"]', MONITOR_PASSWORD);
-        await page.click('button[type="submit"]');
-        await page.waitForTimeout(3000);
-      }
-    });
-
-    test('should test all protected routes', async ({ page }) => {
-      const protectedRoutes = [
-        '/dashboard',
-        '/vocabulary',
-        '/review',
-        '/profile',
-        '/writing',
-        '/pronunciation',
-        '/listening'
-      ];
-      
-      for (const route of protectedRoutes) {
+    - name: 📊 Parse Test Results
+      id: parse_results
+      run: |
+        node -e "
+        const fs = require('fs');
         try {
-          await page.goto(`${SITE_URL}${route}`, { timeout: 10000 });
-          const hasContent = await page.locator('h1, h2').isVisible();
-          console.log(`🔒 ${route}: ${hasContent ? 'ACCESSIBLE' : 'BLOCKED'}`);
+          let results = {};
+          let stats = { expected: 0, passed: 0, failed: 0, skipped: 0 };
+          
+          if (fs.existsSync('test-results.json')) {
+            const content = fs.readFileSync('test-results.json', 'utf8');
+            results = JSON.parse(content);
+            stats = results.stats || stats;
+          }
+          
+          const total = stats.expected || 0;
+          const passed = stats.passed || 0;
+          const failed = stats.failed || 0;
+          const skipped = stats.skipped || 0;
+          
+          const status = failed > 0 ? '🔴 FAILED' : '✅ PASSED';
+          const timestamp = new Date().toLocaleString('ar-SA', {timeZone: 'Asia/Riyadh'});
+          
+          let message = '🛡️ **StellarSpeak Site Guardian Report**\n\n';
+          message += '📊 **نتائج الفحص:**\n';
+          message += '✅ نجح: ' + passed + ' اختبار\n';
+          message += '❌ فشل: ' + failed + ' اختبار\n';
+          message += '⏭️ تم تخطيه: ' + skipped + ' اختبار\n';
+          message += '📈 المجموع: ' + total + ' اختبار\n\n';
+          message += '⏰ **الوقت:** ' + timestamp + '\n';
+          message += '🌐 **الموقع:** https://www.stellarspeak.online\n\n';
+          
+          if (failed > 0) {
+            message += '⚠️ **تحذير:** تم اكتشاف ' + failed + ' مشكلة تحتاج فحص!\n';
+            message += '🔍 **يُنصح بمراجعة التقرير المفصل**\n\n';
+          } else if (passed > 0) {
+            message += '✅ **ممتاز! الموقع يعمل بشكل طبيعي**\n';
+            message += '🚀 **جميع الاختبارات نجحت بلا مشاكل**\n\n';
+          } else {
+            message += '⚠️ **تحذير:** لم يتم تشغيل اختبارات، قد تكون هناك مشكلة تقنية\n\n';
+          }
+          
+          message += '📋 [عرض التقرير التفصيلي](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})';
+          
+          console.log('TELEGRAM_MESSAGE<<EOF');
+          console.log(message);
+          console.log('EOF');
+          
+          fs.writeFileSync('telegram-message.txt', message);
+          
         } catch (error) {
-          console.log(`🔒 ${route}: TIMEOUT (may be protected correctly)`);
+          const errorTime = new Date().toLocaleString('ar-SA', {timeZone: 'Asia/Riyadh'});
+          const errorMessage = '🚨 **خطأ في فحص موقع StellarSpeak**\n\n' +
+            '❌ **المشكلة:** تعذر تحليل نتائج الفحص\n' +
+            '⏰ **الوقت:** ' + errorTime + '\n' +
+            '🔧 **مطلوب:** فحص يدوي للمشكلة\n\n' +
+            '📋 [عرض تفاصيل الخطأ](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})';
+          
+          console.log('TELEGRAM_MESSAGE<<EOF');
+          console.log(errorMessage);
+          console.log('EOF');
+          
+          fs.writeFileSync('telegram-message.txt', errorMessage);
         }
-      }
-    });
-  });
-}
+        " >> $GITHUB_ENV
+      continue-on-error: true
+    
+    - name: 📤 Send Telegram Notification
+      if: always()
+      run: |
+        if [ -f "telegram-message.txt" ]; then
+          MESSAGE=$(cat telegram-message.txt)
+        else
+          MESSAGE="🛡️ **StellarSpeak Site Check مكتمل**
+          
+        ⏰ **الوقت:** $(date '+%Y-%m-%d %H:%M:%S')
+        🌐 **الموقع:** https://www.stellarspeak.online
+        📋 **التفاصيل:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        fi
+        
+        # إرسال الرسالة عبر Telegram
+        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+            \"text\": \"$MESSAGE\",
+            \"parse_mode\": \"Markdown\",
+            \"disable_web_page_preview\": true
+          }" || echo "⚠️ فشل في إرسال رسالة Telegram"
+    
+    - name: 📊 Upload Test Reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: site-guardian-report-${{ github.run_number }}
+        path: |
+          test-results/
+          playwright-report/
+          test-results.json
+          telegram-message.txt
+        retention-days: 30
+
+    # إرسال تقرير مفصل عند الفشل
+    - name: 🚨 Send Detailed Alert on Critical Failure
+      if: failure()
+      run: |
+        ALERT_MESSAGE="🚨 **تنبيه عاجل - مشكلة حرجة في الموقع**
+
+        ❌ **حالة الفحص:** فشل كامل
+        🔍 **المشكلة:** خطأ تقني في عملية الفحص نفسها
+        ⏰ **الوقت:** $(date '+%Y-%m-%d %H:%M:%S')
+        
+        🌐 **الموقع:** https://www.stellarspeak.online
+        📋 **السبب المحتمل:**
+        • مشكلة في الاتصال بالموقع
+        • خطأ في سكريبت الفحص
+        • مشكلة في الخادم
+
+        🔧 **مطلوب إجراء فوري:**
+        1️⃣ فحص الموقع يدوياً
+        2️⃣ مراجعة سجلات الخادم
+        3️⃣ التأكد من حالة الموقع
+
+        📋 [عرض تفاصيل الخطأ الكاملة](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+            \"text\": \"$ALERT_MESSAGE\",
+            \"parse_mode\": \"Markdown\"
+          }"
