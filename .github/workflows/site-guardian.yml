@@ -1,0 +1,58 @@
+name: 🛡️ StellarSpeak Site Guardian
+
+on:
+  schedule:
+    - cron: '*/15 6-22 * * *'  # كل 15 دقيقة خلال ساعات العمل
+    - cron: '0 * * * *'        # فحص شامل كل ساعة
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'نوع الفحص'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+        - quick
+        - full
+        - post-migration
+
+jobs:
+  site-monitoring:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: 📦 Install Dependencies
+      run: |
+        npm install -D @playwright/test
+        npx playwright install --with-deps chromium
+    
+    - name: 🛡️ Run Site Guardian Tests
+      run: npx playwright test
+      env:
+        SITE_URL: https://www.stellarspeak.online
+        TEST_TYPE: ${{ github.event.inputs.test_type || 'quick' }}
+    
+    - name: 📊 Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: site-guardian-report-${{ github.run_number }}
+        path: |
+          test-results/
+          playwright-report/
+        retention-days: 30
+    
+    - name: 🚨 Send Alert if Failed
+      if: failure()
+      run: |
+        echo "⚠️ Site Guardian detected issues!"
+        echo "Check report: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
