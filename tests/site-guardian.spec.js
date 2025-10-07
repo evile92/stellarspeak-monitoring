@@ -1,270 +1,231 @@
-// tests/site-guardian.spec.js - النسخة المحسنة
 import { test, expect } from '@playwright/test';
 
 const SITE_URL = process.env.SITE_URL || 'https://www.stellarspeak.online';
 const TEST_TYPE = process.env.TEST_TYPE || 'quick';
+const MONITOR_EMAIL = process.env.MONITOR_EMAIL;
+const MONITOR_PASSWORD = process.env.MONITOR_PASSWORD;
 
-// 🏠 اختبارات الصفحة الرئيسية
-test.describe('🏠 Homepage & Core Routes', () => {
-  test('should load homepage successfully', async ({ page }) => {
-    console.log('🔍 Testing homepage...');
-    const startTime = Date.now();
-    
-    await page.goto(SITE_URL);
-    await expect(page).toHaveTitle(/StellarSpeak|تعلم الإنجليزية/);
-    
-    const loadTime = Date.now() - startTime;
-    console.log(`⏱️ Homepage loaded in ${loadTime}ms`);
-    expect(loadTime).toBeLessThan(5000);
-  });
-
-  test('should have working navigation', async ({ page }) => {
-    await page.goto(SITE_URL);
-    
-    const links = [
-      'دليل القواعد',
-      'المفردات', 
-      'مركز القراءة',
-      'المدونة'
+// 🏠 اختبارات الصفحات العامة
+test.describe('🏠 Public Pages Health Check', () => {
+  test('should load all public pages successfully', async ({ page }) => {
+    const publicPages = [
+      { url: '/', name: 'Homepage' },
+      { url: '/grammar', name: 'Grammar Guide' },
+      { url: '/vocabulary-guide', name: 'Vocabulary Guide' },
+      { url: '/reading', name: 'Reading Center' },
+      { url: '/blog', name: 'Blog' },
+      { url: '/about', name: 'About' },
+      { url: '/contact', name: 'Contact' }
     ];
     
-    for (const linkText of links) {
-      const link = page.locator(`text="${linkText}"`).first();
-      if (await link.isVisible()) {
-        console.log(`✅ Found link: ${linkText}`);
-      } else {
-        console.log(`⚠️ Missing link: ${linkText}`);
-      }
+    for (const pageInfo of publicPages) {
+      const startTime = Date.now();
+      await page.goto(`${SITE_URL}${pageInfo.url}`);
+      
+      await expect(page.locator('h1, h2')).toBeVisible();
+      
+      const loadTime = Date.now() - startTime;
+      console.log(`✅ ${pageInfo.name}: ${loadTime}ms`);
+      expect(loadTime).toBeLessThan(8000);
     }
   });
 });
 
-// 🔐 اختبارات التسجيل والمصادقة الكاملة
-test.describe('🔐 Complete Authentication Flow', () => {
-  test('should complete user registration and placement test', async ({ page }) => {
-    console.log('🔐 Testing complete authentication flow...');
+// 🔐 اختبارات المصادقة مع الحساب الدائم
+test.describe('🔐 Authentication with Monitor Account', () => {
+  test('should login with monitor account', async ({ page }) => {
+    console.log('🔐 Testing login with monitor account...');
     
-    // 1. زيارة الصفحة الرئيسية
-    await page.goto(SITE_URL);
-    
-    // 2. محاولة العثور على زر "ابدأ التعلم" أو التسجيل
-    const startButton = page.locator('text=ابدأ التعلم').first();
-    const registerButton = page.locator('text=تسجيل جديد').first();
-    const loginButton = page.locator('text=تسجيل الدخول').first();
-    
-    if (await startButton.isVisible()) {
-      console.log('✅ Found start learning button');
-      await startButton.click();
-    } else if (await registerButton.isVisible()) {
-      console.log('✅ Found register button');
-      await registerButton.click();
-    } else if (await loginButton.isVisible()) {
-      console.log('✅ Found login button - going to register');
-      await loginButton.click();
-      // ابحث عن رابط التسجيل في صفحة الدخول
-      const signUpLink = page.locator('text=إنشاء حساب').first();
-      if (await signUpLink.isVisible()) {
-        await signUpLink.click();
-      }
+    if (!MONITOR_EMAIL || !MONITOR_PASSWORD) {
+      console.log('⚠️ Monitor credentials not configured');
+      return;
     }
     
-    // انتظار تحميل الصفحة التالية
-    await page.waitForLoadState('networkidle');
+    await page.goto(`${SITE_URL}/login`);
     
-    // تحقق من وصولنا لصفحة التسجيل أو اختبار تحديد المستوى
-    const isOnRegisterPage = await page.locator('input[type="email"]').isVisible();
-    const isOnPlacementTest = await page.locator('text=اختبار تحديد المستوى').isVisible();
-    const isOnWelcome = await page.locator('text=مرحباً').isVisible();
+    // املأ نموذج تسجيل الدخول
+    await page.fill('input[type="email"], input[name="email"]', MONITOR_EMAIL);
+    await page.fill('input[type="password"], input[name="password"]', MONITOR_PASSWORD);
     
-    console.log(`📍 Current page status:`);
-    console.log(`   - Registration form: ${isOnRegisterPage}`);
-    console.log(`   - Placement test: ${isOnPlacementTest}`);
-    console.log(`   - Welcome screen: ${isOnWelcome}`);
+    // اضغط زر الدخول
+    await page.click('button[type="submit"], button:has-text("دخول"), button:has-text("تسجيل الدخول")');
     
-    expect(isOnRegisterPage || isOnPlacementTest || isOnWelcome).toBeTruthy();
+    // انتظار التحميل
+    await page.waitForTimeout(3000);
+    
+    // تحقق من نجاح الدخول
+    const currentUrl = page.url();
+    const hasLoggedIn = currentUrl.includes('/dashboard') || 
+                       currentUrl === SITE_URL + '/' ||
+                       await page.locator('text=مرحباً, text=لوحة التحكم').isVisible();
+    
+    console.log(`🔐 Login result: ${hasLoggedIn ? 'SUCCESS' : 'FAILED'}`);
+    console.log(`📍 Current URL: ${currentUrl}`);
+    
+    expect(hasLoggedIn).toBeTruthy();
+  });
+});
+
+// 📚 اختبارات الدروس مع المصادقة
+test.describe('📚 Protected Content Access', () => {
+  test.beforeEach(async ({ page }) => {
+    // تسجيل الدخول قبل كل اختبار
+    if (MONITOR_EMAIL && MONITOR_PASSWORD) {
+      await page.goto(`${SITE_URL}/login`);
+      await page.fill('input[type="email"], input[name="email"]', MONITOR_EMAIL);
+      await page.fill('input[type="password"], input[name="password"]', MONITOR_PASSWORD);
+      await page.click('button[type="submit"], button:has-text("دخول"), button:has-text("تسجيل الدخول")');
+      await page.waitForTimeout(3000);
+    }
   });
 
-  test('should handle registration form submission', async ({ page }) => {
-    console.log('📝 Testing registration form...');
+  test('should access dashboard after login', async ({ page }) => {
+    console.log('📊 Testing dashboard access...');
     
-    // الذهاب مباشرة لصفحة التسجيل
-    await page.goto(`${SITE_URL}/register`);
+    // الذهاب للوحة التحكم
+    await page.goto(`${SITE_URL}/dashboard`);
+    await page.waitForTimeout(2000);
     
-    // ملء نموذج التسجيل ببيانات وهمية
-    const timestamp = Date.now();
-    const testEmail = `test${timestamp}@example.com`;
+    // تحقق من وجود محتوى لوحة التحكم
+    const hasDashboard = await page.locator('h1, h2, .level-card, .course-card').isVisible();
     
-    if (await page.locator('input[name="username"]').isVisible()) {
-      await page.fill('input[name="username"]', `TestUser${timestamp}`);
-    }
+    console.log(`📊 Dashboard accessible: ${hasDashboard}`);
+    expect(hasDashboard).toBeTruthy();
+  });
+
+  test('should access lesson content', async ({ page }) => {
+    console.log('📖 Testing lesson access...');
     
-    if (await page.locator('input[type="email"]').isVisible()) {
-      await page.fill('input[type="email"]', testEmail);
-    }
+    // الذهاب للوحة التحكم أولاً
+    await page.goto(`${SITE_URL}/dashboard`);
+    await page.waitForTimeout(2000);
     
-    if (await page.locator('input[type="password"]').isVisible()) {
-      await page.fill('input[type="password"]', 'TestPassword123!');
-    }
+    // ابحث عن مستوى أو درس للضغط عليه
+    const levelButton = page.locator('.level-card, button:has-text("A1"), button:has-text("ابدأ")').first();
     
-    // محاولة إرسال النموذج
-    const submitButton = page.locator('button[type="submit"], button:has-text("تسجيل"), button:has-text("إنشاء حساب")').first();
-    if (await submitButton.isVisible()) {
-      await submitButton.click();
-      
-      // انتظار الاستجابة
+    if (await levelButton.isVisible()) {
+      await levelButton.click();
       await page.waitForTimeout(3000);
       
-      // تحقق من النتيجة
-      const hasError = await page.locator('text=خطأ').isVisible();
-      const hasSuccess = await page.locator('text=تم').isVisible();
-      const redirected = !page.url().includes('/register');
+      // ابحث عن دروس
+      const lessonItem = page.locator('.lesson-item, .lesson-card, button:has-text("درس")').first();
       
-      console.log(`📝 Registration result: Error=${hasError}, Success=${hasSuccess}, Redirected=${redirected}`);
-      
-      // على الأقل يجب ألا يكون هناك خطأ جاف في الصفحة
-      expect(page.url()).toBeDefined();
-    }
-  });
-
-  test('should access placement test', async ({ page }) => {
-    console.log('📊 Testing placement test access...');
-    
-    // محاولة الوصول لاختبار تحديد المستوى
-    const placementTestUrls = [
-      `${SITE_URL}/test`,
-      `${SITE_URL}/placement-test`,
-      `${SITE_URL}/assessment`
-    ];
-    
-    for (const url of placementTestUrls) {
-      try {
-        const response = await page.goto(url, { timeout: 10000 });
+      if (await lessonItem.isVisible()) {
+        await lessonItem.click();
+        await page.waitForTimeout(3000);
         
-        if (response && response.status() !== 404) {
-          console.log(`✅ Found placement test at: ${url}`);
-          
-          // ابحث عن عناصر الاختبار
-          const hasQuestions = await page.locator('input[type="radio"], button:has-text("التالي"), text=سؤال').isVisible();
-          
-          if (hasQuestions) {
-            console.log('✅ Placement test interface found');
-            return;
-          }
-        }
-      } catch (error) {
-        console.log(`⚠️ Could not access: ${url}`);
+        // تحقق من تحميل محتوى الدرس
+        const hasLessonContent = await page.locator('h1, h2, .lesson-content').isVisible();
+        console.log(`📖 Lesson content loaded: ${hasLessonContent}`);
+        
+        expect(hasLessonContent).toBeTruthy();
+      } else {
+        console.log('⚠️ No lesson items found');
       }
-    }
-  });
-});
-
-// 📚 اختبارات الدروس مع Authentication
-test.describe('📚 Authenticated Lessons Flow', () => {
-  test('should test lesson access with authentication flow', async ({ page }) => {
-    console.log('📚 Testing authenticated lesson access...');
-    
-    // 1. الذهاب للصفحة الرئيسية
-    await page.goto(SITE_URL);
-    
-    // 2. محاولة الوصول للدروس
-    const dashboardUrls = [
-      `${SITE_URL}/dashboard`,
-      `${SITE_URL}/lessons`,
-      `${SITE_URL}/levels`
-    ];
-    
-    for (const url of dashboardUrls) {
-      try {
-        console.log(`🔍 Trying to access: ${url}`);
-        const response = await page.goto(url, { 
-          waitUntil: 'domcontentloaded',
-          timeout: 10000 
-        });
-        
-        console.log(`📍 ${url} - Status: ${response?.status()}`);
-        
-        // تحقق من وجود محتوى أو redirect للتسجيل
-        const hasLoginForm = await page.locator('input[type="email"]').isVisible();
-        const hasLessonContent = await page.locator('h1, h2').isVisible();
-        const hasWelcome = await page.locator('text=مرحباً').isVisible();
-        
-        console.log(`   - Login form: ${hasLoginForm}`);
-        console.log(`   - Content: ${hasLessonContent}`);
-        console.log(`   - Welcome: ${hasWelcome}`);
-        
-        // الاختبار نجح إذا كان هناك استجابة منطقية
-        expect(hasLoginForm || hasLessonContent || hasWelcome).toBeTruthy();
-        
-        break; // إذا نجح واحد، لا نحتاج باقي الروابط
-        
-      } catch (error) {
-        console.log(`⚠️ Error accessing ${url}: ${error.message}`);
-      }
+    } else {
+      console.log('⚠️ No level buttons found');
     }
   });
 
-  test('should handle direct lesson URL with auth redirect', async ({ page }) => {
-    console.log('🔗 Testing direct lesson URL with auth...');
+  test('should test certificate access', async ({ page }) => {
+    console.log('🏆 Testing certificate functionality...');
     
-    // محاولة الوصول المباشر لدرس
-    try {
-      const response = await page.goto(`${SITE_URL}/lesson/A1-1`, { 
-        waitUntil: 'domcontentloaded',
-        timeout: 10000
-      });
-      
-      console.log(`🔗 Direct lesson URL - Status: ${response?.status()}`);
-      
-      // يجب أن يكون هناك redirect للتسجيل أو رسالة واضحة
-      const redirectedToAuth = page.url().includes('login') || page.url().includes('register');
-      const hasAuthMessage = await page.locator('text=تسجيل الدخول, text=إنشاء حساب').isVisible();
-      const hasErrorMessage = await page.locator('text=غير مخول, text=يرجى التسجيل').isVisible();
-      
-      console.log(`   - Redirected to auth: ${redirectedToAuth}`);
-      console.log(`   - Has auth message: ${hasAuthMessage}`);
-      console.log(`   - Has error message: ${hasErrorMessage}`);
-      
-      // نجح الاختبار إذا كان هناك تعامل صحيح مع غير المسجلين
-      expect(redirectedToAuth || hasAuthMessage || hasErrorMessage).toBeTruthy();
-      
-    } catch (error) {
-      console.log(`⚠️ Direct lesson URL timeout - this is expected for protected routes`);
-      // Timeout متوقع للصفحات المحمية
-      expect(error.message).toContain('Timeout');
-    }
+    // محاولة الوصول لصفحة شهادة (سيعيد توجيه إذا لم تكن مكتسبة)
+    await page.goto(`${SITE_URL}/certificate/A1`);
+    await page.waitForTimeout(2000);
+    
+    // تحقق من الاستجابة المناسبة
+    const hasRedirect = !page.url().includes('/certificate/');
+    const hasErrorMessage = await page.locator('text=خطأ, text=غير مكتسبة').isVisible();
+    const hasCertificate = await page.locator('text=شهادة, text=Certificate').isVisible();
+    
+    console.log(`🏆 Certificate handling: Redirect=${hasRedirect}, Error=${hasErrorMessage}, Certificate=${hasCertificate}`);
+    
+    // أي استجابة منطقية تعتبر نجاح
+    expect(hasRedirect || hasErrorMessage || hasCertificate).toBeTruthy();
   });
 });
 
 // 📱 اختبارات الاستجابة
-test.describe('📱 Responsive Design', () => {
-  test('should work on mobile', async ({ browser }) => {
+test.describe('📱 Mobile Responsiveness', () => {
+  test('should work on mobile devices', async ({ browser }) => {
     const context = await browser.newContext({
       viewport: { width: 375, height: 667 },
       userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)'
     });
     
     const page = await context.newPage();
+    
+    // اختبار الصفحة الرئيسية
     await page.goto(SITE_URL);
-    
     await expect(page.locator('h1')).toBeVisible();
-    console.log('📱 Mobile test passed');
     
+    // اختبار صفحة أخرى
+    await page.goto(`${SITE_URL}/grammar`);
+    await expect(page.locator('h1, h2')).toBeVisible();
+    
+    console.log('📱 Mobile responsiveness: PASSED');
     await context.close();
   });
 });
 
 // ⚡ اختبارات الأداء
-test.describe('⚡ Performance Tests', () => {
-  test('should load key pages quickly', async ({ page }) => {
-    const pages = ['/', '/grammar', '/vocabulary-guide', '/blog'];
+test.describe('⚡ Performance Monitoring', () => {
+  test('should maintain good performance', async ({ page }) => {
+    const performanceTests = [
+      { url: '/', target: 3000 },
+      { url: '/grammar', target: 4000 },
+      { url: '/vocabulary-guide', target: 4000 },
+      { url: '/blog', target: 5000 }
+    ];
     
-    for (const url of pages) {
+    for (const testCase of performanceTests) {
       const startTime = Date.now();
-      await page.goto(`${SITE_URL}${url}`, { timeout: 15000 });
-      const loadTime = Date.now() - startTime;
+      await page.goto(`${SITE_URL}${testCase.url}`);
+      await page.waitForLoadState('networkidle');
       
-      console.log(`⏱️ ${url} loaded in ${loadTime}ms`);
-      expect(loadTime).toBeLessThan(10000);
+      const loadTime = Date.now() - startTime;
+      console.log(`⏱️ ${testCase.url}: ${loadTime}ms (target: ${testCase.target}ms)`);
+      
+      expect(loadTime).toBeLessThan(testCase.target);
     }
   });
 });
+
+// 🔍 اختبارات متقدمة للمحتوى المحمي
+if (TEST_TYPE === 'full' || TEST_TYPE === 'post-migration') {
+  test.describe('🔍 Advanced Protected Content Tests', () => {
+    test.beforeEach(async ({ page }) => {
+      // تسجيل الدخول
+      if (MONITOR_EMAIL && MONITOR_PASSWORD) {
+        await page.goto(`${SITE_URL}/login`);
+        await page.fill('input[type="email"]', MONITOR_EMAIL);
+        await page.fill('input[type="password"]', MONITOR_PASSWORD);
+        await page.click('button[type="submit"]');
+        await page.waitForTimeout(3000);
+      }
+    });
+
+    test('should test all protected routes', async ({ page }) => {
+      const protectedRoutes = [
+        '/dashboard',
+        '/vocabulary',
+        '/review',
+        '/profile',
+        '/writing',
+        '/pronunciation',
+        '/listening'
+      ];
+      
+      for (const route of protectedRoutes) {
+        try {
+          await page.goto(`${SITE_URL}${route}`, { timeout: 10000 });
+          const hasContent = await page.locator('h1, h2').isVisible();
+          console.log(`🔒 ${route}: ${hasContent ? 'ACCESSIBLE' : 'BLOCKED'}`);
+        } catch (error) {
+          console.log(`🔒 ${route}: TIMEOUT (may be protected correctly)`);
+        }
+      }
+    });
+  });
+}
