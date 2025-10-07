@@ -1,0 +1,15 @@
+{
+  "name": "stellarspeak-monitoring",
+  "version": "1.0.0",
+  "description": "Site monitoring and testing for StellarSpeak",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  },
+  "keywords": ["monitoring", "testing", "stellarspeak"],
+  "author": "evile92"
+}
