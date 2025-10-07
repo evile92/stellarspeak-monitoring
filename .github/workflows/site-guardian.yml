@@ -81,7 +81,7 @@ jobs:
           const duration = results.duration ? (results.duration / 1000).toFixed(2) : '0';
           
           const status = failed > 0 ? '🔴 FAILED' : '✅ PASSED';
-          const timestamp = new Date().toLocaleString('ar-SA', {timeZone: 'Asia/Riyadh'});
+          const timestamp = new Date().toLocaleString('ar-SA-u-nu-latn', {timeZone: 'Asia/Riyadh'});
           const runNumber = '${{ github.run_number }}';
           const runId = '${{ github.run_id }}';
           const repoName = '${{ github.repository }}';
@@ -136,7 +136,7 @@ jobs:
           console.log('total=' + total);
           
         } catch (error) {
-          const errorTime = new Date().toLocaleString('ar-SA', {timeZone: 'Asia/Riyadh'});
+          const errorTime = new Date().toLocaleString('ar-SA-u-nu-latn', {timeZone: 'Asia/Riyadh'});
           const runId = '${{ github.run_id }}';
           
           const errorMessage = '🚨 *خطأ في فحص موقع StellarSpeak*\\n' +
