@@ -28,79 +28,63 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        # ❌ إزالة السطر التالي - هذا يسبب المشكلة
-        # cache: 'npm'
-
-    - name: 🗂️ Cache Playwright Browsers
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/ms-playwright
-        key: playwright-${{ runner.os }}-v1.49.0
-        restore-keys: playwright-${{ runner.os }}-
 
     - name: 📦 Install Dependencies
-      run: npm install -D @playwright/test
+      run: |
+        echo "📦 Installing Playwright..."
+        npm install -D @playwright/test
+        echo "✅ Dependencies installed"
 
     - name: 🔍 Debug Environment
       run: |
         echo "📊 Environment Info:"
-        echo "Node version: $(node --version)"
-        echo "NPM version: $(npm --version)"
-        echo "Working directory: $(pwd)"
-        echo "Files: $(ls -la)"
-        echo "Playwright version: $(npx playwright --version)"
+        echo "Node: $(node --version)"
+        echo "NPM: $(npm --version)"
+        echo "PWD: $(pwd)"
+        echo "Files:"
+        ls -la
+        echo "Playwright:"
+        npx playwright --version
 
     - name: 🛡️ Run Site Guardian Tests
       id: tests
       run: |
         echo "🔍 Starting Playwright tests..."
+        echo "🌐 Target: $SITE_URL"
         
-        # تشغيل الاختبارات مع معالجة محسنة
-        if timeout 600s npx playwright test --reporter=list; then
-          echo "✅ Tests completed successfully"
-          EXIT_CODE=0
+        # تشغيل الاختبارات - Playwright سيُنشئ test-results.json تلقائياً من config
+        set +e
+        npx playwright test
+        EXIT_CODE=$?
+        set -e
+        
+        echo "📊 Test execution finished with exit code: $EXIT_CODE"
+        
+        # التحقق من وجود ملف النتائج
+        if [ -f "test-results.json" ]; then
+          echo "✅ test-results.json found!"
+          echo "📄 Content preview:"
+          head -50 test-results.json
         else
-          EXIT_CODE=$?
-          echo "⚠️ Tests completed with exit code: $EXIT_CODE"
-        fi
-        
-        # البحث عن ملف النتائج من Playwright
-        RESULTS_FOUND=false
-        
-        # محاولة إيجاد ملف النتائج في مواقع مختلفة
-        for path in "./test-results.json" "./results.json" "./test-results/results.json" "./playwright-report/results.json"; do
-          if [ -f "$path" ]; then
-            echo "📊 Found results at: $path"
-            cp "$path" test-results.json
-            RESULTS_FOUND=true
-            break
-          fi
-        done
-        
-        # إذا لم نجد ملف نتائج، أنشئ واحداً بناءً على exit code
-        if [ "$RESULTS_FOUND" = false ]; then
-          echo "❌ No results file found, creating based on exit code: $EXIT_CODE"
+          echo "❌ test-results.json NOT found!"
+          echo "📁 Current directory files:"
+          ls -la
+          echo "📁 Searching for JSON files:"
+          find . -name "*.json" -type f 2>/dev/null || true
           
-          if [ $EXIT_CODE -eq 0 ]; then
-            # نجحت كل الاختبارات
-            EXPECTED_TESTS=15
-            echo "{\"stats\":{\"expected\":$EXPECTED_TESTS,\"passed\":$EXPECTED_TESTS,\"failed\":0,\"skipped\":0},\"duration\":5000}" > test-results.json
-          else
-            # فشل في الاختبارات
-            EXPECTED_TESTS=15
-            echo "{\"stats\":{\"expected\":$EXPECTED_TESTS,\"passed\":0,\"failed\":$EXPECTED_TESTS,\"skipped\":0},\"duration\":3000}" > test-results.json
-          fi
+          # إنشاء ملف نتائج فارغ بصيغة Playwright الصحيحة
+          echo '{"suites":[],"errors":[],"stats":{"startTime":"'$(date -Iseconds)'","duration":0,"expected":0,"skipped":0,"unexpected":0,"flaky":0}}' > test-results.json
+          echo "⚠️ Created empty test-results.json with Playwright format"
         fi
         
-        echo "📄 Final test results file:"
-        cat test-results.json
-        echo "tests_completed=true" >> $GITHUB_OUTPUT
+        echo "tests_exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
       env:
         SITE_URL: https://www.stellarspeak.online
         TEST_TYPE: ${{ github.event.inputs.test_type || 'quick' }}
         MONITOR_EMAIL: ${{ secrets.MONITOR_EMAIL }}
         MONITOR_PASSWORD: ${{ secrets.MONITOR_PASSWORD }}
       timeout-minutes: 12
+      continue-on-error: true
 
     - name: 📊 Parse Test Results
       run: |
@@ -109,61 +93,67 @@ jobs:
         
         console.log('🔍 Parsing test results...');
         
+        // Default structure matching Playwright JSON reporter format
         let testResults = {
-          stats: { expected: 15, passed: 0, failed: 15, skipped: 0 },
-          duration: 3000
+          suites: [],
+          errors: [],
+          stats: {
+            startTime: new Date().toISOString(),
+            duration: 0,
+            expected: 0,
+            skipped: 0,
+            unexpected: 0,
+            flaky: 0
+          }
         };
         
         try {
           if (fs.existsSync('test-results.json')) {
             const content = fs.readFileSync('test-results.json', 'utf8').trim();
-            console.log('📄 Raw content length:', content.length);
-            console.log('📋 Content preview:', content.substring(0, 200));
+            console.log('📄 File size:', content.length, 'bytes');
             
-            if (content && content !== '') {
+            if (content && content.length > 10) {
               testResults = JSON.parse(content);
-              console.log('✅ Successfully parsed results:', JSON.stringify(testResults.stats, null, 2));
+              console.log('✅ Successfully parsed Playwright results');
+              console.log('📊 Stats:', JSON.stringify(testResults.stats, null, 2));
             }
           } else {
-            console.log('❌ Test results file not found, using defaults');
+            console.log('❌ test-results.json not found');
           }
         } catch (error) {
-          console.log('⚠️ Error reading results, using defaults:', error.message);
+          console.error('⚠️ Error parsing results:', error.message);
         }
         
+        // Extract stats (Playwright format: expected, unexpected, skipped, flaky)
         const stats = testResults.stats || {};
-        const total = stats.expected || 0;
-        const passed = stats.passed || 0;
-        const failed = stats.failed || 0;
+        const expected = stats.expected || 0;  // Tests that passed
+        const unexpected = stats.unexpected || 0;  // Tests that failed
         const skipped = stats.skipped || 0;
-        const duration = (testResults.duration / 1000).toFixed(1);
+        const flaky = stats.flaky || 0;
+        const total = expected + unexpected + skipped + flaky;
+        const duration = (stats.duration / 1000).toFixed(1);
         
-        // تحسين منطق تحديد الحالة
+        // Determine status
         let status;
         if (total === 0) {
           status = '🔴 NO_TESTS';
-        } else if (failed > 0) {
+        } else if (unexpected > 0) {
           status = '🔴 FAILED';
-        } else if (passed > 0) {
+        } else if (expected > 0) {
           status = '✅ PASSED';
         } else {
           status = '⚠️ UNKNOWN';
         }
         
         const timestamp = new Date().toLocaleString('ar-SA-u-nu-latn', {timeZone: 'Asia/Riyadh'});
-        const runNumber = '${{ github.run_number }}';
-        const runId = '${{ github.run_id }}';
-        const repoName = '${{ github.repository }}';
-        const actor = '${{ github.actor }}';
-        const eventName = '${{ github.event_name }}';
         
         let message = '🛡️ *StellarSpeak Site Guardian Report*\\\\n';
         message += '━━━━━━━━━━━━━━━━━━━━━━\\\\n\\\\n';
         
         message += '📊 *نتائج الفحص:*\\\\n';
         message += '• الحالة: ' + status + '\\\\n';
-        message += '• نجح: ✅ ' + passed + ' اختبار\\\\n';
-        message += '• فشل: ❌ ' + failed + ' اختبار\\\\n';
+        message += '• نجح: ✅ ' + expected + ' اختبار\\\\n';
+        message += '• فشل: ❌ ' + unexpected + ' اختبار\\\\n';
         message += '• تم تخطيه: ⏭️ ' + skipped + ' اختبار\\\\n';
         message += '• المجموع: 📈 ' + total + ' اختبار\\\\n';
         message += '• مدة التنفيذ: ⏱️ ' + duration + ' ثانية\\\\n\\\\n';
@@ -171,45 +161,36 @@ jobs:
         message += '🔍 *معلومات الفحص:*\\\\n';
         message += '• الموقع: 🌐 [stellarspeak.online](https://www.stellarspeak.online)\\\\n';
         message += '• الوقت: 🕐 ' + timestamp + '\\\\n';
-        message += '• نوع التشغيل: 🔄 ' + (eventName === 'schedule' ? 'تلقائي (كل 12 ساعة)' : 'يدوي') + '\\\\n';
-        message += '• رقم التشغيل: #' + runNumber + '\\\\n\\\\n';
+        message += '• نوع التشغيل: 🔄 ' + ('${{ github.event_name }}' === 'schedule' ? 'تلقائي (كل 12 ساعة)' : 'يدوي') + '\\\\n';
+        message += '• رقم التشغيل: #${{ github.run_number }}\\\\n\\\\n';
         
         if (total === 0) {
           message += '🚨 *خطأ تقني - لم يتم تشغيل اختبارات:*\\\\n';
           message += '━━━━━━━━━━━━━━━━━━━━━━\\\\n';
-          message += '🔧 مشكلة في إعداد Playwright أو البيئة التشغيلية\\\\n';
-          message += '🌐 قد يكون هناك مشكلة في الوصول للموقع أو Container\\\\n';
-          message += '👨‍💻 يتطلب فحص السجلات التفصيلية والإعدادات\\\\n';
-          message += '⚡ هذا يعني أن الموقع لم يتم فحصه فعلياً\\\\n\\\\n';
-        } else if (failed > 0) {
+          message += '🔧 مشكلة في إعداد Playwright أو البيئة\\\\n';
+          message += '🌐 قد يكون هناك مشكلة في الوصول للموقع\\\\n';
+          message += '👨‍💻 يتطلب فحص السجلات التفصيلية\\\\n\\\\n';
+        } else if (unexpected > 0) {
           message += '⚠️ *تحذير - مشاكل مكتشفة:*\\\\n';
           message += '━━━━━━━━━━━━━━━━━━━━━━\\\\n';
-          message += '🔴 تم اكتشاف *' + failed + ' مشكلة* تحتاج فحص فوري!\\\\n';
-          message += '🔍 يُنصح بمراجعة التقرير المفصل للحصول على التفاصيل الكاملة\\\\n';
-          message += '⚡ قد تؤثر هذه المشاكل على تجربة المستخدمين\\\\n\\\\n';
-        } else if (passed > 0) {
+          message += '🔴 تم اكتشاف *' + unexpected + ' مشكلة* تحتاج فحص!\\\\n';
+          message += '🔍 راجع التقرير المفصل للتفاصيل\\\\n\\\\n';
+        } else if (expected > 0) {
           message += '✅ *ممتاز - الموقع يعمل بشكل مثالي!*\\\\n';
           message += '━━━━━━━━━━━━━━━━━━━━━━\\\\n';
-          message += '🚀 جميع الاختبارات (' + passed + ') نجحت بلا أي مشاكل\\\\n';
-          message += '💯 الأداء والوظائف تعمل بكفاءة عالية\\\\n';
-          message += '🎯 لا حاجة لأي إجراء في الوقت الحالي\\\\n\\\\n';
-        } else {
-          message += '⚠️ *حالة غير معروفة:*\\\\n';
-          message += '━━━━━━━━━━━━━━━━━━━━━━\\\\n';
-          message += '🔍 تم تشغيل اختبارات لكن بدون نتائج واضحة\\\\n';
-          message += '🔧 يُنصح بمراجعة السجلات والإعدادات\\\\n\\\\n';
+          message += '🚀 جميع الاختبارات (' + expected + ') نجحت بلا مشاكل\\\\n';
+          message += '💯 الأداء والوظائف تعمل بكفاءة عالية\\\\n\\\\n';
         }
         
         message += '📋 *روابط مفيدة:*\\\\n';
-        message += '• [عرض التقرير التفصيلي](https://github.com/' + repoName + '/actions/runs/' + runId + ')\\\\n';
-        message += '• [جميع التشغيلات السابقة](https://github.com/' + repoName + '/actions)\\\\n';
-        message += '• [الموقع المباشر](https://www.stellarspeak.online)\\\\n';
+        message += '• [عرض التقرير](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\\\\n';
+        message += '• [جميع التشغيلات](https://github.com/${{ github.repository }}/actions)\\\\n';
+        message += '• [الموقع](https://www.stellarspeak.online)\\\\n';
         
         fs.writeFileSync('telegram-message.txt', message);
-        console.log('status=' + status);
-        console.log('passed=' + passed);
-        console.log('failed=' + failed);
-        console.log('total=' + total);
+        console.log('✅ Telegram message created');
+        console.log('Status:', status);
+        console.log('Expected:', expected, 'Unexpected:', unexpected, 'Total:', total);
         "
       continue-on-error: true
 
@@ -223,13 +204,13 @@ jobs:
           TOKEN_LENGTH=$(echo -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" | wc -c)
           echo "✅ TELEGRAM_BOT_TOKEN is set (length: $TOKEN_LENGTH characters)"
         else
-          echo "❌ TELEGRAM_BOT_TOKEN is NOT set - Please add it in repository secrets"
+          echo "❌ TELEGRAM_BOT_TOKEN is NOT set"
         fi
         
         if [ -n "${{ secrets.TELEGRAM_CHAT_ID }}" ]; then
           echo "✅ TELEGRAM_CHAT_ID is set: ${{ secrets.TELEGRAM_CHAT_ID }}"
         else
-          echo "❌ TELEGRAM_CHAT_ID is NOT set - Please add it in repository secrets"
+          echo "❌ TELEGRAM_CHAT_ID is NOT set"
         fi
         
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
