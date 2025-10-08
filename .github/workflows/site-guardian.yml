@@ -17,7 +17,7 @@ on:
 jobs:
   site-monitoring:
     runs-on: ubuntu-latest
-    container: mcr.microsoft.com/playwright:v1.49.0-jammy
+    container: mcr.microsoft.com/playwright:v1.56.0-jammy
     timeout-minutes: 15
     
     steps:
