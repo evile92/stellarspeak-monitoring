@@ -2,17 +2,27 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  timeout: 60000, // زيادة timeout للاختبارات
-  expect: { timeout: 15000 }, // زيادة timeout للتوقعات
+  timeout: 60000,
+  expect: { timeout: 15000 },
   
-  // إضافة retry للاختبارات المتفشلة
+  // Retry settings
   retries: process.env.CI ? 2 : 1,
   
-  // تشغيل الاختبارات بشكل متسلسل في CI
+  // Worker settings
   workers: process.env.CI ? 1 : undefined,
   
-  // إضافة global setup/teardown
-  globalTimeout: 300000, // 5 دقائق للتشغيل الكامل
+  // Global timeout
+  globalTimeout: 600000, // 10 دقائق
+  
+  // 🔥 الإصلاح الأساسي - JSON Reporter بشكل صحيح
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: 'playwright-report', open: 'never' }],
+    ['json', { outputFile: 'test-results.json' }]
+  ],
+  
+  // إضافة forbidOnly في CI
+  forbidOnly: !!process.env.CI,
   
   projects: [
     {
@@ -20,10 +30,9 @@ export default defineConfig({
       use: { 
         ...devices['Desktop Chrome'],
         headless: true,
-        // إضافة viewport واضح
         viewport: { width: 1280, height: 720 },
         
-        // تحسين إعدادات المتصفح للـ CI
+        // Browser launch options
         launchOptions: {
           args: [
             '--no-sandbox',
@@ -31,31 +40,23 @@ export default defineConfig({
             '--disable-dev-shm-usage',
             '--disable-background-timer-throttling',
             '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding'
+            '--disable-renderer-backgrounding',
+            '--disable-gpu'
           ]
         }
       },
     }
   ],
   
-  reporter: [
-    // إضافة line reporter للـ CI
-    ['line'],
-    ['html', { outputFolder: 'playwright-report', open: 'never' }],
-    // تصحيح مسار JSON - يجب أن يكون test-results.json مباشرة
-    ['json', { outputFile: 'test-results.json' }],
-    ['list', { printSteps: true }]
-  ],
-  
   use: {
     baseURL: process.env.SITE_URL || 'https://www.stellarspeak.online',
     
-    // تحسين إعدادات التتبع والتسجيل
+    // Trace and screenshot settings
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     
-    // إضافة headers لتجنب blocking
+    // HTTP headers
     extraHTTPHeaders: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -65,55 +66,11 @@ export default defineConfig({
       'Pragma': 'no-cache'
     },
     
-    // تحسين إعدادات التنقل
-    navigationTimeout: 45000, // 45 ثانية للتنقل
-    actionTimeout: 30000, // 30 ثانية للإجراءات
+    // Navigation and action timeouts
+    navigationTimeout: 45000,
+    actionTimeout: 30000,
     
-    // إضافة معالجة للأخطاء الشائعة
-    ignoreHTTPSErrors: true, // تجاهل أخطاء SSL في بيئة التطوير
-    
-    // تحسين إعدادات الشبكة
-    contextOptions: {
-      // تجاهل أخطاء الشبكة الثانوية
-      ignoreDefaultArgs: ['--disable-extensions'],
-      
-      // إضافة timeout للسياق
-      timeout: 60000
-    }
-  },
-  
-  // إضافة إعدادات خاصة بـ CI
-  ...(process.env.CI && {
-    forbidOnly: true, // منع استخدام test.only في CI
-    retries: 2, // إعادة المحاولة مرتين
-    workers: 1, // عامل واحد فقط
-    
-    // إعدادات إضافية للـ Container
-    use: {
-      // تجاوز الإعدادات الافتراضية في Container
-      launchOptions: {
-        executablePath: '/ms/playwright/chromium-1134/chrome-linux/chrome',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--disable-features=TranslateUI',
-          '--disable-ipc-flooding-protection',
-          '--disable-gpu',
-          '--single-process'
-        ]
-      }
-    }
-  }),
-  
-  // إضافة web server للاختبار المحلي (اختياري)
-  webServer: process.env.CI ? undefined : {
-    command: 'echo "Using remote server: $SITE_URL"',
-    url: process.env.SITE_URL || 'https://www.stellarspeak.online',
-    reuseExistingServer: true,
-    timeout: 10000
+    // HTTPS errors
+    ignoreHTTPSErrors: true
   }
 });
