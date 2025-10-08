@@ -1,15 +1,65 @@
 {
   "name": "stellarspeak-monitoring",
-  "version": "1.0.0",
-  "description": "Site monitoring and testing for StellarSpeak",
+  "version": "2.0.0",
+  "description": "Advanced site monitoring and testing system for StellarSpeak - English learning platform",
+  "type": "module",
   "scripts": {
     "test": "playwright test",
     "test:headed": "playwright test --headed",
-    "test:ui": "playwright test --ui"
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report",
+    "test:quick": "TEST_TYPE=quick playwright test",
+    "test:full": "TEST_TYPE=full playwright test",
+    "test:mobile": "playwright test --project=mobile",
+    "test:ci": "playwright test --reporter=json:test-results.json",
+    "install:browsers": "playwright install chromium",
+    "install:deps": "playwright install-deps",
+    "health-check": "node -e \"console.log('✅ StellarSpeak Monitor is ready!')\"",
+    "validate-config": "playwright test --list"
   },
   "devDependencies": {
-    "@playwright/test": "^1.40.0"
+    "@playwright/test": "^1.49.0"
   },
-  "keywords": ["monitoring", "testing", "stellarspeak"],
-  "author": "evile92"
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "keywords": [
+    "monitoring", 
+    "testing", 
+    "stellarspeak", 
+    "e2e",
+    "playwright",
+    "site-guardian",
+    "english-learning",
+    "education-platform",
+    "automated-testing",
+    "ci-cd",
+    "performance-monitoring",
+    "uptime-monitoring"
+  ],
+  "author": {
+    "name": "evile92",
+    "url": "https://github.com/evile92"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/evile92/stellarspeak-monitoring.git"
+  },
+  "bugs": {
+    "url": "https://github.com/evile92/stellarspeak-monitoring/issues"
+  },
+  "homepage": "https://www.stellarspeak.online",
+  "config": {
+    "site_url": "https://www.stellarspeak.online",
+    "test_timeout": "30000",
+    "max_retries": "2"
+  },
+  "volta": {
+    "node": "20.10.0",
+    "npm": "10.2.3"
+  },
+  "packageManager": "npm@10.2.3"
 }
