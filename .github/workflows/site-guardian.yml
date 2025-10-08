@@ -47,10 +47,58 @@ jobs:
       run: npm install -D @playwright/test
       timeout-minutes: 5
     
+    - name: 🔍 Debug Environment
+      run: |
+        echo "🔍 Environment Debug Info:"
+        echo "Node version: $(node --version)"
+        echo "NPM version: $(npm --version)"
+        echo "Site URL: $SITE_URL"
+        echo "Container info:"
+        cat /etc/os-release | head -5
+        echo "Network test:"
+        curl -I $SITE_URL || echo "Curl failed, but proceeding..."
+        echo "Playwright version:"
+        npx playwright --version || echo "Playwright not found"
+      env:
+        SITE_URL: https://www.stellarspeak.online
+    
     - name: 🛡️ Run Site Guardian Tests
       id: tests
       run: |
-        npx playwright test --reporter=json > test-results.json 2>&1 || echo "Tests completed"
+        echo "🔍 Starting Playwright tests..."
+        
+        # تشغيل الاختبارات مع تقارير متعددة
+        npx playwright test --reporter=line,json:test-results.json || TEST_EXIT_CODE=$?
+        
+        echo "📊 Test execution completed with exit code: ${TEST_EXIT_CODE:-0}"
+        
+        # التحقق من وجود ملف النتائج وطباعة محتوياته
+        if [ -f "test-results.json" ]; then
+          echo "✅ Test results file created successfully"
+          echo "📄 Content preview:"
+          head -20 test-results.json || echo "Could not preview file"
+          
+          # التحقق من صحة JSON
+          if node -e "JSON.parse(require('fs').readFileSync('test-results.json', 'utf8'))" 2>/dev/null; then
+            echo "✅ JSON file is valid"
+          else
+            echo "❌ JSON file is invalid, creating fallback"
+            echo '{"stats":{"expected":1,"passed":0,"failed":1,"skipped":0},"duration":1000}' > test-results.json
+          fi
+        else
+          echo "❌ Test results file not found, creating fallback"
+          # إنشاء ملف نتائج يشير إلى مشكلة تقنية
+          echo '{"stats":{"expected":1,"passed":0,"failed":1,"skipped":0},"duration":1000}' > test-results.json
+        fi
+        
+        # التحقق من وجود تقارير Playwright
+        if [ -d "playwright-report" ]; then
+          echo "✅ Playwright HTML report generated"
+          ls -la playwright-report/ | head -5
+        else
+          echo "⚠️ No HTML report found"
+        fi
+        
         echo "tests_completed=true" >> $GITHUB_OUTPUT
       env:
         SITE_URL: https://www.stellarspeak.online
@@ -68,10 +116,21 @@ jobs:
           let results = {};
           let stats = { expected: 0, passed: 0, failed: 0, skipped: 0 };
           
+          console.log('🔍 Parsing test results...');
+          
           if (fs.existsSync('test-results.json')) {
             const content = fs.readFileSync('test-results.json', 'utf8');
-            results = JSON.parse(content);
-            stats = results.stats || stats;
+            console.log('📄 Raw content length:', content.length);
+            
+            if (content.trim()) {
+              results = JSON.parse(content);
+              stats = results.stats || stats;
+              console.log('✅ Successfully parsed results:', JSON.stringify(stats, null, 2));
+            } else {
+              console.log('⚠️ Empty results file');
+            }
+          } else {
+            console.log('❌ No test results file found');
           }
           
           const total = stats.expected || 0;
@@ -80,7 +139,18 @@ jobs:
           const skipped = stats.skipped || 0;
           const duration = results.duration ? (results.duration / 1000).toFixed(2) : '0';
           
-          const status = failed > 0 ? '🔴 FAILED' : '✅ PASSED';
+          // تحسين منطق تحديد الحالة
+          let status;
+          if (total === 0) {
+            status = '🔴 NO_TESTS';
+          } else if (failed > 0) {
+            status = '🔴 FAILED';
+          } else if (passed > 0) {
+            status = '✅ PASSED';
+          } else {
+            status = '⚠️ UNKNOWN';
+          }
+          
           const timestamp = new Date().toLocaleString('ar-SA-u-nu-latn', {timeZone: 'Asia/Riyadh'});
           const runNumber = '${{ github.run_number }}';
           const runId = '${{ github.run_id }}';
@@ -105,7 +175,14 @@ jobs:
           message += '• نوع التشغيل: 🔄 ' + (eventName === 'schedule' ? 'تلقائي (كل 12 ساعة)' : 'يدوي') + '\\n';
           message += '• رقم التشغيل: #' + runNumber + '\\n\\n';
           
-          if (failed > 0) {
+          if (total === 0) {
+            message += '🚨 *خطأ تقني - لم يتم تشغيل اختبارات:*\\n';
+            message += '━━━━━━━━━━━━━━━━━━━━━━\\n';
+            message += '🔧 مشكلة في إعداد Playwright أو البيئة التشغيلية\\n';
+            message += '🌐 قد يكون هناك مشكلة في الوصول للموقع أو Container\\n';
+            message += '👨‍💻 يتطلب فحص السجلات التفصيلية والإعدادات\\n';
+            message += '⚡ هذا يعني أن الموقع لم يتم فحصه فعلياً\\n\\n';
+          } else if (failed > 0) {
             message += '⚠️ *تحذير - مشاكل مكتشفة:*\\n';
             message += '━━━━━━━━━━━━━━━━━━━━━━\\n';
             message += '🔴 تم اكتشاف *' + failed + ' مشكلة* تحتاج فحص فوري!\\n';
@@ -118,10 +195,10 @@ jobs:
             message += '💯 الأداء والوظائف تعمل بكفاءة عالية\\n';
             message += '🎯 لا حاجة لأي إجراء في الوقت الحالي\\n\\n';
           } else {
-            message += '⚠️ *تحذير - لم يتم تشغيل اختبارات:*\\n';
+            message += '⚠️ *حالة غير معروفة:*\\n';
             message += '━━━━━━━━━━━━━━━━━━━━━━\\n';
-            message += '🔧 قد تكون هناك مشكلة تقنية في نظام الفحص\\n';
-            message += '👨‍💻 يُنصح بفحص السكريبت والإعدادات\\n\\n';
+            message += '🔍 تم تشغيل اختبارات لكن بدون نتائج واضحة\\n';
+            message += '🔧 يُنصح بمراجعة السجلات والإعدادات\\n\\n';
           }
           
           message += '📋 *روابط مفيدة:*\\n';
@@ -136,20 +213,23 @@ jobs:
           console.log('total=' + total);
           
         } catch (error) {
+          console.error('❌ Error parsing results:', error.message);
           const errorTime = new Date().toLocaleString('ar-SA-u-nu-latn', {timeZone: 'Asia/Riyadh'});
           const runId = '${{ github.run_id }}';
           
-          const errorMessage = '🚨 *خطأ في فحص موقع StellarSpeak*\\n' +
+          const errorMessage = '🚨 *خطأ حرج في نظام المراقبة*\\n' +
             '━━━━━━━━━━━━━━━━━━━━━━\\n\\n' +
-            '❌ *المشكلة:* تعذر تحليل نتائج الفحص\\n' +
+            '❌ *المشكلة:* فشل في تحليل أو تشغيل الاختبارات\\n' +
             '⏰ *الوقت:* ' + errorTime + '\\n' +
-            '🔧 *السبب المحتمل:* خطأ في معالجة البيانات\\n\\n' +
-            '📋 *الإجراء المطلوب:*\\n' +
-            '• فحص يدوي للموقع\\n' +
-            '• مراجعة سجلات GitHub Actions\\n' +
-            '• التحقق من إعدادات السكريبت\\n\\n' +
+            '🔧 *السبب المحتمل:* خطأ في Playwright أو معالجة البيانات\\n' +
+            '⚡ *التأثير:* لم يتم فحص الموقع في هذه الجولة\\n\\n' +
+            '📋 *الإجراء المطلوب فوراً:*\\n' +
+            '• فحص يدوي عاجل للموقع\\n' +
+            '• مراجعة سجلات GitHub Actions التفصيلية\\n' +
+            '• التحقق من إعدادات Playwright والـ Container\\n' +
+            '• فحص اتصال الموقع والخادم\\n\\n' +
             '🔗 *التفاصيل:*\\n' +
-            '[عرض تفاصيل الخطأ الكاملة](${{ github.server_url }}/${{ github.repository }}/actions/runs/' + runId + ')';
+            '[عرض سجلات الخطأ الكاملة](${{ github.server_url }}/${{ github.repository }}/actions/runs/' + runId + ')';
           
           fs.writeFileSync('telegram-message.txt', errorMessage);
           console.log('status=ERROR');
@@ -214,23 +294,23 @@ jobs:
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           
           ❌ *حالة الفحص:* فشل كامل في عملية الفحص
-          🔍 *نوع المشكلة:* خطأ تقني حرج
+          🔍 *نوع المشكلة:* خطأ تقني حرج في نظام المراقبة
           ⏰ *وقت الاكتشاف:* ${{ github.event.head_commit.timestamp }}
           🌐 *الموقع المتأثر:* [stellarspeak.online](https://www.stellarspeak.online)
           
           📋 *الأسباب المحتملة:*
           • 🔌 مشكلة في الاتصال بالموقع أو الخادم
-          • ⚙️ خطأ في سكريبت الفحص أو التبعيات
+          • ⚙️ خطأ في Playwright أو Container Environment
           • 🌐 الموقع غير متاح أو بطيء جداً
           • 🔐 مشكلة في بيانات المصادقة
-          • 💾 نفاد موارد الخادم
+          • 💾 نفاد موارد GitHub Actions أو الخادم
           
           🔧 *الإجراءات المطلوبة فوراً:*
           1️⃣ فحص الموقع يدوياً من المتصفح
           2️⃣ مراجعة سجلات الخادم (Server Logs)
           3️⃣ التحقق من حالة استضافة الموقع
-          4️⃣ فحص إعدادات GitHub Actions
-          5️⃣ مراجعة السكريبت والتبعيات
+          4️⃣ فحص إعدادات GitHub Actions والـ Container
+          5️⃣ مراجعة سكريبت Playwright والتبعيات
           
           📊 *معلومات إضافية:*
           • رقم التشغيل: #${{ github.run_number }}
