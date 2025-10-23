@@ -150,24 +150,22 @@ test.describe('🔐 Authentication System Tests', () => {
       await expect(page.locator('input[type="email"]').first()).toBeVisible({ timeout: 10000 });
       await expect(page.locator('input[type="password"]').first()).toBeVisible({ timeout: 5000 });
       
-      console.log('📝 Filling login credentials...');
-      // املأ نموذج تسجيل الدخول مع التحقق
-      await page.fill('input[type="email"]', MONITOR_EMAIL);
-      await page.fill('input[type="password"]', MONITOR_PASSWORD);
+    console.log('🔘 Clicking login button...');
       
-      // البحث عن زر تسجيل الدخول - مع إصلاح syntax
-      const loginButton = page.locator('button[type="submit"]').first();
+      // [!] الإصلاح: انتظر انتقال الرابط أو استجابة الشبكة بدلاً من الانتظار الثابت
+      await Promise.all([
+          page.waitForURL(url => 
+            url.includes('/dashboard') || 
+            url.includes('/profile') ||
+            url === SITE_URL + '/',
+            { timeout: 25000 } // انتظر حتى 25 ثانية للانتقال
+          ),
+          loginButton.click() // انقر على الزر لبدء الانتقال
+      ]);
+
+      console.log('⏳ Login response received.');
       
-      await expect(loginButton).toBeVisible({ timeout: 5000 });
-      
-      console.log('🔘 Clicking login button...');
-      await loginButton.click();
-      
-      // انتظار استجابة تسجيل الدخول
-      console.log('⏳ Waiting for login response...');
-      await page.waitForTimeout(8000); // زيادة الوقت
-      
-      // التحقق من نجاح تسجيل الدخول بطرق متعددة - مع إصلاح selectors
+      // التحقق من نجاح تسجيل الدخول بطرق متعددة
       const currentUrl = page.url();
       console.log(`📍 Current URL after login: ${currentUrl}`);
       
@@ -221,8 +219,18 @@ test.describe('📚 Protected Content & Learning Features', () => {
       await page.goto(`${SITE_URL}/login`);
       await page.fill('input[type="email"]', MONITOR_EMAIL);
       await page.fill('input[type="password"]', MONITOR_PASSWORD);
-      await page.click('button[type="submit"]');
-      await page.waitForTimeout(8000);
+      
+      // [!] الإصلاح: انتظر انتقال الرابط بعد النقر
+      await Promise.all([
+          page.waitForURL(url => 
+            url.includes('/dashboard') || 
+            url.includes('/profile') ||
+            url === SITE_URL + '/',
+            { timeout: 25000 }
+          ),
+          page.click('button[type="submit"]')
+      ]);
+      console.log('🔑 Login complete for protected test.');
     }
   });
 
