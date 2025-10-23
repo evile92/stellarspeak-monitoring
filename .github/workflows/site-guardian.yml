@@ -224,6 +224,32 @@ jobs:
         "
       continue-on-error: true
 
+    # ⬇️⬇️⬇️ هذا هو الإصلاح المضاف ⬇️⬇️⬇️
+    - name: 🛡️ Ensure Message File Exists (Fallback)
+      if: always()
+      run: |
+        if [ ! -f "telegram-message.txt" ]; then
+          echo "❌ 'Parse Test Results' step failed to create message file. Creating fallback."
+          
+          # [!] إنشاء رسالة خطأ احتياطية بنفس تنسيق التيليجرام
+          # استخدم \\\\\\\\n لفواصل الأسطر
+          
+          MESSAGE="🚨 *CRITICAL: Workflow Failure*\\\\\\\\n"
+          MESSAGE+="━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n"
+          MESSAGE+="⚠️ *System Alert:*\\\\\\\\n"
+          MESSAGE+="The 'Parse Test Results' step failed to run correctly.\\\\\\\\n"
+          MESSAGE+="This means \`test-results.json\` might be missing or the Node.js script has an error.\\\\\\\\n\\\\\\\\n"
+          MESSAGE+="🔍 *Action Required:*\\\\\\\\n"
+          MESSAGE+="Please check the GitHub Actions logs immediately for the *'Parse Test Results'* step to see the error details.\\\\\\\\n\\\\\\\\n"
+          MESSAGE+="🔗 [View Failed Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          
+          echo "$MESSAGE" > telegram-message.txt
+          echo "✅ Fallback 'telegram-message.txt' created."
+        else
+          echo "✅ 'telegram-message.txt' already exists. No fallback needed."
+        fi
+    # ⬆️⬆️⬆️ نهاية الإصلاح المضاف ⬆️⬆️⬆️
+
     - name: 🔍 Debug Secrets
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -281,8 +307,7 @@ jobs:
           ⏰ **Time:** $(date)
           🔧 **Run:** #${{ github.run_number }}
           
-          🚀 **Action Required:** 
-          • Manual site check immediately
+          🚀 **Action Required:** • Manual site check immediately
           • Review GitHub Actions logs
           • Verify system configuration
           
