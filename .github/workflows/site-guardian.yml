@@ -31,8 +31,9 @@ jobs:
 
     - name: 📦 Install Dependencies
       run: |
-        echo "📦 Installing Playwright..."
-        npm install -D @playwright/test
+        echo "📦 Installing dev dependencies from package.json..."
+        # سيقرأ package.json ويثبت @playwright/test
+        npm install --only=dev
         echo "✅ Dependencies installed"
 
     - name: 🔍 Debug Environment
