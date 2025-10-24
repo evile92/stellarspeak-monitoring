@@ -224,24 +224,22 @@ jobs:
         "
       continue-on-error: true
 
-    # ⬇️⬇️⬇️ هذا هو الإصلاح المضاف ⬇️⬇️⬇️
+    # ⬇️⬇️⬇️ هذا هو الإصلاح المضاف (تم تعديل الصيغة) ⬇️⬇️⬇️
     - name: 🛡️ Ensure Message File Exists (Fallback)
       if: always()
       run: |
         if [ ! -f "telegram-message.txt" ]; then
           echo "❌ 'Parse Test Results' step failed to create message file. Creating fallback."
           
-          # [!] إنشاء رسالة خطأ احتياطية بنفس تنسيق التيليجرام
-          # استخدم \\\\\\\\n لفواصل الأسطر
-          
+          # [!] إصلاح: استخدام صيغة sh القياسية (MESSAGE="${MESSAGE}...") بدلاً من '+=
           MESSAGE="🚨 *CRITICAL: Workflow Failure*\\\\\\\\n"
-          MESSAGE+="━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n"
-          MESSAGE+="⚠️ *System Alert:*\\\\\\\\n"
-          MESSAGE+="The 'Parse Test Results' step failed to run correctly.\\\\\\\\n"
-          MESSAGE+="This means \`test-results.json\` might be missing or the Node.js script has an error.\\\\\\\\n\\\\\\\\n"
-          MESSAGE+="🔍 *Action Required:*\\\\\\\\n"
-          MESSAGE+="Please check the GitHub Actions logs immediately for the *'Parse Test Results'* step to see the error details.\\\\\\\\n\\\\\\\\n"
-          MESSAGE+="🔗 [View Failed Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          MESSAGE="${MESSAGE}━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n"
+          MESSAGE="${MESSAGE}⚠️ *System Alert:*\\\\\\\\n"
+          MESSAGE="${MESSAGE}The 'Parse Test Results' step failed to run correctly.\\\\\\\\n"
+          MESSAGE="${MESSAGE}This means \`test-results.json\` might be missing or the Node.js script has an error.\\\\\\\\n\\\\\\\\n"
+          MESSAGE="${MESSAGE}🔍 *Action Required:*\\\\\\\\n"
+          MESSAGE="${MESSAGE}Please check the GitHub Actions logs immediately for the *'Parse Test Results'* step to see the error details.\\\\\\\\n\\\\\\\\n"
+          MESSAGE="${MESSAGE}🔗 [View Failed Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           
           echo "$MESSAGE" > telegram-message.txt
           echo "✅ Fallback 'telegram-message.txt' created."
@@ -254,7 +252,7 @@ jobs:
       run: |
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "🔍 Checking Telegram Secrets..."
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
         
         if [ -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
           TOKEN_LENGTH=$(echo -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" | wc -c)
