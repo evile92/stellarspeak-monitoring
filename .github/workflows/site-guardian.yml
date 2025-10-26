@@ -91,13 +91,12 @@ jobs:
       run: |
         node -e "
         const fs = require('fs');
-        
         console.log('🔍 Parsing test results...');
         
-        let testResults = { suites: [], errors: [], stats: {} };
-        let failedTests = [];
-        
         try {
+          let testResults = { suites: [], errors: [], stats: {} };
+          let failedTests = [];
+          
           if (fs.existsSync('test-results.json')) {
             const content = fs.readFileSync('test-results.json', 'utf8').trim();
             if (content && content.length > 10) {
@@ -107,120 +106,114 @@ jobs:
           } else {
             console.log('❌ test-results.json not found');
           }
-        } catch (error) {
-          console.error('⚠️ Error parsing results:', error.message);
-        }
 
-        // [!] إضافة: دالة جديدة للبحث عن الاختبارات الفاشلة
-        function parseSuites(suites, parentTitle = '') {
-          if (!suites) return;
-          
-          for (const suite of suites) {
-            const currentTitle = parentTitle ? `${parentTitle} > ${suite.title}` : suite.title;
-            
-            // البحث عن الاختبارات (specs) داخل الـ suite
-            if (suite.specs) {
-              for (const spec of suite.specs) {
-                // البحث عن أي نتيجة فاشلة (يأخذ retries بعين الاعتبار)
-                const failedRun = spec.tests.flatMap(t => t.results).find(r => r.status === 'failed' || r.status === 'timedOut');
-                
-                if (failedRun) {
-                  const testTitle = `${currentTitle} > ${spec.title}`;
-                  let errorMsg = 'No error message';
-                  
-                  if (failedRun.error) {
-                    errorMsg = failedRun.error.message ? failedRun.error.message.split('\n')[0] : (failedRun.error.value || 'Error');
+          // [!] دالة البحث عن الأخطاء
+          function parseSuites(suites, parentTitle = '') {
+            if (!suites) return;
+            for (const suite of suites) {
+              const currentTitle = parentTitle ? `${parentTitle} > ${suite.title}` : suite.title;
+              if (suite.specs) {
+                for (const spec of suite.specs) {
+                  const failedRun = spec.tests.flatMap(t => t.results).find(r => r.status === 'failed' || r.status === 'timedOut');
+                  if (failedRun) {
+                    let errorMsg = 'No error message';
+                    if (failedRun.error) {
+                      errorMsg = failedRun.error.message ? failedRun.error.message.split('\n')[0] : (failedRun.error.value || 'Error');
+                    }
+                    failedTests.push({
+                      title: `${currentTitle} > ${spec.title}`.replace(/^ > | > $/g, ''),
+                      error: errorMsg.substring(0, 150)
+                    });
                   }
-                  
-                  failedTests.push({
-                    title: testTitle.replace(/^ > | > $/g, ''), // تنظيف الاسم
-                    error: errorMsg.substring(0, 150) // تقصير رسالة الخطأ
-                  });
                 }
               }
-            }
-            
-            // البحث في الـ suites المتداخلة (nested describes)
-            if (suite.suites) {
-              parseSuites(suite.suites, currentTitle);
+              if (suite.suites) {
+                parseSuites(suite.suites, currentTitle);
+              }
             }
           }
-        }
-        
-        // بدء البحث
-        parseSuites(testResults.suites);
-
-        const stats = testResults.stats || {};
-        const expected = stats.expected || 0;
-        const unexpected = stats.unexpected || 0;
-        const skipped = stats.skipped || 0;
-        const flaky = stats.flaky || 0;
-        const total = expected + unexpected + skipped + flaky;
-        const duration = (stats.duration / 1000).toFixed(1);
-        
-        let status;
-        if (total === 0) status = '🔴 NO_TESTS';
-        else if (unexpected > 0) status = '🔴 FAILED';
-        else if (expected > 0) status = '✅ PASSED';
-        else status = '⚠️ UNKNOWN';
-        
-        const timestamp = new Date().toLocaleString('ar-SA-u-nu-latn', {timeZone: 'Asia/Riyadh'});
-        
-        // [!] إصلاح: استخدام 8 backslashes (\\\\\\\\n) ليتم تفسيرها كـ \n في الملف
-        let message = '🛡️ *StellarSpeak Site Guardian Report*\\\\\\\\n';
-        message += '━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n\\\\\\\\n';
-        
-        message += '📊 *نتائج الفحص:*\\\\\\\\n';
-        message += '• الحالة: ' + status + '\\\\\\\\n';
-        message += '• نجح: ✅ ' + expected + ' اختبار\\\\\\\\n';
-        message += '• فشل: ❌ ' + unexpected + ' اختبار\\\\\\\\n';
-        message += '• تم تخطيه: ⏭️ ' + skipped + ' اختبار\\\\\\\\n';
-        message += '• المجموع: 📈 ' + total + ' اختبار\\\\\\\\n';
-        message += '• مدة التنفيذ: ⏱️ ' + duration + ' ثانية\\\\\\\\n\\\\\\\\n';
-        
-        message += '🔍 *معلومات الفحص:*\\\\\\\\n';
-        message += '• الموقع: 🌐 [stellarspeak.online](https://www.stellarspeak.online)\\\\\\\\n';
-        message += '• الوقت: 🕐 ' + timestamp + '\\\\\\\\n';
-        message += '• نوع التشغيل: 🔄 ' + ('${{ github.event_name }}' === 'schedule' ? 'تلقائي (كل 12 ساعة)' : 'يدوي') + '\\\\\\\\n';
-        message += '• رقم التشغيل: #${{ github.run_number }}\\\\\\\\n\\\\\\\\n';
-        
-        // [!] إضافة: تفاصيل الأخطاء
-        if (unexpected > 0) {
-          message += '⚠️ *تحذير - مشاكل مكتشفة (' + unexpected + '):*\\\\\\\\n';
-          message += '━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n';
           
-          message += '🔍 *تفاصيل الأخطاء (أول 5):*\\\\\\\\n';
-          failedTests.slice(0, 5).forEach((test, index) => {
-            // تنظيف النص لـ Markdown
-            const cleanTitle = test.title.replace(/[*_`\[\]]/g, '');
-            const cleanError = test.error.replace(/[*_`\[\]]/g, '');
-            
-            message += (index + 1) + '. *' + cleanTitle + '*\\\\\\\\n';
-            message += '   └ 📄: `' + cleanError + '...`\\\\\\\\n\\\\\\\\n';
+          parseSuites(testResults.suites);
+
+          const stats = testResults.stats || {};
+          const expected = stats.expected || 0;
+          const unexpected = stats.unexpected || 0;
+          const skipped = stats.skipped || 0;
+          const flaky = stats.flaky || 0;
+          const total = expected + unexpected + skipped + flaky;
+          const duration = (stats.duration / 1000).toFixed(1);
+          
+          let status;
+          if (total === 0) status = '🔴 NO_TESTS';
+          else if (unexpected > 0) status = '🔴 FAILED';
+          else if (expected > 0) status = '✅ PASSED';
+          else status = '⚠️ UNKNOWN';
+          
+          // [!] الإصلاح: تغيير صيغة التاريخ إلى توقيت المغرب
+          const timestamp = new Date().toLocaleString('en-US', { 
+            timeZone: 'Africa/Casablanca', // ⬅️ تم التغيير هنا
+            year: 'numeric', 
+            month: '2-digit', 
+            day: '2-digit', 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            hour12: false 
           });
-          if (failedTests.length > 5) {
-             message += '... والمزيد من الأخطاء في التقرير الكامل.\\\\\\\\n\\\\\\\\n';
+          
+          let message = '🛡️ *StellarSpeak Site Guardian Report*\\\\\\\\n';
+          message += '━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n\\\\\\\\n';
+          message += '📊 *نتائج الفحص:*\\\\\\\\n';
+          message += '• الحالة: ' + status + '\\\\\\\\n';
+          message += '• نجح: ✅ ' + expected + ' اختبار\\\\\\\\n';
+          message += '• فشل: ❌ ' + unexpected + ' اختبار\\\\\\\\n';
+          message += '• تم تخطيه: ⏭️ ' + skipped + ' اختبار\\\\\\\\n';
+          message += '• المجموع: 📈 ' + total + ' اختبار\\\\\\\\n';
+          message += '• مدة التنفيذ: ⏱️ ' + duration + ' ثانية\\\\\\\\n\\\\\\\\n';
+          message += '🔍 *معلومات الفحص:*\\\\\\\\n';
+          message += '• الموقع: 🌐 [stellarspeak.online](https://www.stellarspeak.online)\\\\\\\\n';
+          message += '• الوقت: 🕐 ' + timestamp + ' (Casablanca Time)\\\\\\\\n'; // ⬅️ تم التغيير هنا
+          message += '• نوع التشغيل: 🔄 ' + ('${{ github.event_name }}' === 'schedule' ? 'تلقائي (كل 12 ساعة)' : 'يدوي') + '\\\\\\\\n';
+          message += '• رقم التشغيل: #${{ github.run_number }}\\\\\\\\n\\\\\\\\n';
+          
+          if (unexpected > 0) {
+            message += '⚠️ *تحذير - مشاكل مكتشفة (' + unexpected + '):*\\\\\\\\n';
+            message += '━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n';
+            message += '🔍 *تفاصيل الأخطاء (أول 5):*\\\\\\\\n';
+            failedTests.slice(0, 5).forEach((test, index) => {
+              const cleanTitle = test.title.replace(/[*_`\[\]]/g, '');
+              const cleanError = test.error.replace(/[*_`\[\]]/g, '');
+              message += (index + 1) + '. *' + cleanTitle + '*\\\\\\\\n';
+              message += '   └ 📄: `' + cleanError + '...`\\\\\\\\n\\\\\\\\n';
+            });
+            if (failedTests.length > 5) {
+               message += '... والمزيد من الأخطاء في التقرير الكامل.\\\\\\\\n\\\\\\\\n';
+            }
+          } else if (total === 0) {
+            message += '🚨 *خطأ تقني - لم يتم تشغيل اختبارات:*\\\\\\\\n';
+            message += '━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n';
+            message += '🔧 مشكلة في إعداد Playwright أو البيئة\\\\\\\\n\\\\\\\\n';
+          } else if (expected > 0) {
+            message += '✅ *ممتاز - الموقع يعمل بشكل مثالي!*\\\\\\\\n';
+            message += '━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n';
+            message += '🚀 جميع الاختبارات (' + expected + ') نجحت بلا مشاكل\\\\\\\\n\\\\\\\\n';
           }
+          
+          message += '📋 *روابط مفيدة:*\\\\\\\\n';
+          message += '• [عرض التقرير](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\\\\\\\\n';
+          message += '• [الموقع](https://www.stellarspeak.online)\\\\\\\\n';
+          
+          fs.writeFileSync('telegram-message.txt', message);
+          console.log('✅ Telegram message created');
+          console.log('Status:', status);
+          console.log('Failed tests details:', JSON.stringify(failedTests, null, 2));
 
-        } else if (total === 0) {
-          message += '🚨 *خطأ تقني - لم يتم تشغيل اختبارات:*\\\\\\\\n';
-          message += '━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n';
-          message += '🔧 مشكلة في إعداد Playwright أو البيئة\\\\\\\\n\\\\\\\\n';
-
-        } else if (expected > 0) {
-          message += '✅ *ممتاز - الموقع يعمل بشكل مثالي!*\\\\\\\\n';
-          message += '━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n';
-          message += '🚀 جميع الاختبارات (' + expected + ') نجحت بلا مشاكل\\\\\\\\n\\\\\\\\n';
+        } catch (error) {
+          // [!] إصلاح: إضافة معالجة شاملة للأخطاء
+          console.error('❌ CRITICAL ERROR in Parse Test Results script:');
+          console.error(error.message);
+          // اخرج برمز خطأ لإعلام الـ workflow بالفشل
+          process.exit(1); 
         }
-        
-        message += '📋 *روابط مفيدة:*\\\\\\\\n';
-        message += '• [عرض التقرير](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\\\\\\\\n';
-        message += '• [الموقع](https://www.stellarspeak.online)\\\\\\\\n';
-        
-        fs.writeFileSync('telegram-message.txt', message);
-        console.log('✅ Telegram message created');
-        console.log('Status:', status);
-        console.log('Failed tests details:', JSON.stringify(failedTests, null, 2));
         "
       continue-on-error: true
 
