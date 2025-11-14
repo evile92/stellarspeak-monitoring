@@ -32,7 +32,6 @@ jobs:
     - name: 📦 Install Dependencies
       run: |
         echo "📦 Installing dev dependencies from package.json..."
-        # سيقرأ package.json ويثبت @playwright/test
         npm install --only=dev
         echo "✅ Dependencies installed"
 
@@ -53,7 +52,6 @@ jobs:
         echo "🔍 Starting Playwright tests..."
         echo "🌐 Target: $SITE_URL"
         
-        # تشغيل الاختبارات - Playwright سيُنشئ test-results.json تلقائياً من config
         set +e
         npx playwright test
         EXIT_CODE=$?
@@ -61,7 +59,6 @@ jobs:
         
         echo "📊 Test execution finished with exit code: $EXIT_CODE"
         
-        # التحقق من وجود ملف النتائج
         if [ -f "test-results.json" ]; then
           echo "✅ test-results.json found!"
           echo "📄 Content preview:"
@@ -73,7 +70,6 @@ jobs:
           echo "📁 Searching for JSON files:"
           find . -name "*.json" -type f 2>/dev/null || true
           
-          # إنشاء ملف نتائج فارغ بصيغة Playwright الصحيحة
           echo '{"suites":[],"errors":[],"stats":{"startTime":"'$(date -Iseconds)'","duration":0,"expected":0,"skipped":0,"unexpected":0,"flaky":0}}' > test-results.json
           echo "⚠️ Created empty test-results.json with Playwright format"
         fi
@@ -97,31 +93,42 @@ jobs:
           let testResults = { suites: [], errors: [], stats: {} };
           let failedTests = [];
           
+          // تحسين قراءة الملف مع معالجة أخطاء أفضل
           if (fs.existsSync('test-results.json')) {
             const content = fs.readFileSync('test-results.json', 'utf8').trim();
+            console.log('📄 File size:', content.length, 'bytes');
+            
             if (content && content.length > 10) {
-              testResults = JSON.parse(content);
-              console.log('✅ Successfully parsed Playwright results');
+              try {
+                testResults = JSON.parse(content);
+                console.log('✅ Successfully parsed Playwright results');
+              } catch (parseError) {
+                console.error('❌ JSON Parse Error:', parseError.message);
+                console.log('First 200 chars of file:', content.substring(0, 200));
+                throw parseError;
+              }
+            } else {
+              console.warn('⚠️ File is empty or too small');
             }
           } else {
-            console.log('❌ test-results.json not found');
+            console.error('❌ test-results.json not found');
+            throw new Error('test-results.json file not found');
           }
 
-          // [!] دالة البحث عن الأخطاء
           function parseSuites(suites, parentTitle = '') {
             if (!suites) return;
             for (const suite of suites) {
-              const currentTitle = parentTitle ? `${parentTitle} > ${suite.title}` : suite.title;
+              const currentTitle = parentTitle ? \`\${parentTitle} > \${suite.title}\` : suite.title;
               if (suite.specs) {
                 for (const spec of suite.specs) {
                   const failedRun = spec.tests.flatMap(t => t.results).find(r => r.status === 'failed' || r.status === 'timedOut');
                   if (failedRun) {
                     let errorMsg = 'No error message';
                     if (failedRun.error) {
-                      errorMsg = failedRun.error.message ? failedRun.error.message.split('\n')[0] : (failedRun.error.value || 'Error');
+                      errorMsg = failedRun.error.message ? failedRun.error.message.split('\\n')[0] : (failedRun.error.value || 'Error');
                     }
                     failedTests.push({
-                      title: `${currentTitle} > ${spec.title}`.replace(/^ > | > $/g, ''),
+                      title: \`\${currentTitle} > \${spec.title}\`.replace(/^ > | > \$/g, ''),
                       error: errorMsg.substring(0, 150)
                     });
                   }
@@ -149,9 +156,8 @@ jobs:
           else if (expected > 0) status = '✅ PASSED';
           else status = '⚠️ UNKNOWN';
           
-          // [!] الإصلاح: تغيير صيغة التاريخ إلى توقيت المغرب
           const timestamp = new Date().toLocaleString('en-US', { 
-            timeZone: 'Africa/Casablanca', // ⬅️ تم التغيير هنا
+            timeZone: 'Africa/Casablanca',
             year: 'numeric', 
             month: '2-digit', 
             day: '2-digit', 
@@ -171,19 +177,19 @@ jobs:
           message += '• مدة التنفيذ: ⏱️ ' + duration + ' ثانية\\\\\\\\n\\\\\\\\n';
           message += '🔍 *معلومات الفحص:*\\\\\\\\n';
           message += '• الموقع: 🌐 [stellarspeak.online](https://www.stellarspeak.online)\\\\\\\\n';
-          message += '• الوقت: 🕐 ' + timestamp + ' (Casablanca Time)\\\\\\\\n'; // ⬅️ تم التغيير هنا
-          message += '• نوع التشغيل: 🔄 ' + ('${{ github.event_name }}' === 'schedule' ? 'تلقائي (كل 12 ساعة)' : 'يدوي') + '\\\\\\\\n';
-          message += '• رقم التشغيل: #${{ github.run_number }}\\\\\\\\n\\\\\\\\n';
+          message += '• الوقت: 🕐 ' + timestamp + ' (Casablanca Time)\\\\\\\\n';
+          message += '• نوع التشغيل: 🔄 ' + ('\${{ github.event_name }}' === 'schedule' ? 'تلقائي (كل 12 ساعة)' : 'يدوي') + '\\\\\\\\n';
+          message += '• رقم التشغيل: #\${{ github.run_number }}\\\\\\\\n\\\\\\\\n';
           
           if (unexpected > 0) {
             message += '⚠️ *تحذير - مشاكل مكتشفة (' + unexpected + '):*\\\\\\\\n';
             message += '━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n';
             message += '🔍 *تفاصيل الأخطاء (أول 5):*\\\\\\\\n';
             failedTests.slice(0, 5).forEach((test, index) => {
-              const cleanTitle = test.title.replace(/[*_`\[\]]/g, '');
-              const cleanError = test.error.replace(/[*_`\[\]]/g, '');
+              const cleanTitle = test.title.replace(/[*_\`\\[\\]]/g, '');
+              const cleanError = test.error.replace(/[*_\`\\[\\]]/g, '');
               message += (index + 1) + '. *' + cleanTitle + '*\\\\\\\\n';
-              message += '   └ 📄: `' + cleanError + '...`\\\\\\\\n\\\\\\\\n';
+              message += '   └ 📄: \`' + cleanError + '...\`\\\\\\\\n\\\\\\\\n';
             });
             if (failedTests.length > 5) {
                message += '... والمزيد من الأخطاء في التقرير الكامل.\\\\\\\\n\\\\\\\\n';
@@ -199,47 +205,50 @@ jobs:
           }
           
           message += '📋 *روابط مفيدة:*\\\\\\\\n';
-          message += '• [عرض التقرير](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\\\\\\\\n';
+          message += '• [عرض التقرير](https://github.com/\${{ github.repository }}/actions/runs/\${{ github.run_id }})\\\\\\\\n';
           message += '• [الموقع](https://www.stellarspeak.online)\\\\\\\\n';
           
           fs.writeFileSync('telegram-message.txt', message);
-          console.log('✅ Telegram message created');
+          console.log('✅ Telegram message created successfully');
           console.log('Status:', status);
-          console.log('Failed tests details:', JSON.stringify(failedTests, null, 2));
 
         } catch (error) {
-          // [!] إصلاح: إضافة معالجة شاملة للأخطاء
-          console.error('❌ CRITICAL ERROR in Parse Test Results script:');
-          console.error(error.message);
-          // اخرج برمز خطأ لإعلام الـ workflow بالفشل
-          process.exit(1); 
+          console.error('❌ CRITICAL ERROR in Parse Test Results:');
+          console.error('Error name:', error.name);
+          console.error('Error message:', error.message);
+          console.error('Stack:', error.stack);
+          
+          // إنشاء رسالة خطأ للـ Telegram
+          const errorMessage = '🚨 *CRITICAL: Parse Results Failed*\\\\\\\\n' +
+            '━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n' +
+            '❌ Error: ' + error.message + '\\\\\\\\n\\\\\\\\n' +
+            '🔗 [View Logs](https://github.com/\${{ github.repository }}/actions/runs/\${{ github.run_id }})';
+          
+          fs.writeFileSync('telegram-message.txt', errorMessage);
+          console.log('⚠️ Created error message file');
+          
+          process.exit(1);
         }
         "
       continue-on-error: true
 
-    # ⬇️⬇️⬇️ هذا هو الإصلاح المضاف (تم تعديل الصيغة) ⬇️⬇️⬇️
     - name: 🛡️ Ensure Message File Exists (Fallback)
       if: always()
       run: |
         if [ ! -f "telegram-message.txt" ]; then
-          echo "❌ 'Parse Test Results' step failed to create message file. Creating fallback."
+          echo "❌ 'Parse Test Results' failed. Creating fallback message..."
           
-          # [!] إصلاح: استخدام صيغة sh القياسية (MESSAGE="${MESSAGE}...") بدلاً من '+=
-          MESSAGE="🚨 *CRITICAL: Workflow Failure*\\\\\\\\n"
-          MESSAGE="${MESSAGE}━━━━━━━━━━━━━━━━━━━━━━\\\\\\\\n"
-          MESSAGE="${MESSAGE}⚠️ *System Alert:*\\\\\\\\n"
-          MESSAGE="${MESSAGE}The 'Parse Test Results' step failed to run correctly.\\\\\\\\n"
-          MESSAGE="${MESSAGE}This means \`test-results.json\` might be missing or the Node.js script has an error.\\\\\\\\n\\\\\\\\n"
-          MESSAGE="${MESSAGE}🔍 *Action Required:*\\\\\\\\n"
-          MESSAGE="${MESSAGE}Please check the GitHub Actions logs immediately for the *'Parse Test Results'* step to see the error details.\\\\\\\\n\\\\\\\\n"
-          MESSAGE="${MESSAGE}🔗 [View Failed Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          cat > telegram-message.txt << 'EOF'
+🚨 *CRITICAL: Workflow Failure*\\n━━━━━━━━━━━━━━━━━━━━━━\\n
+⚠️ *System Alert:*\\nThe 'Parse Test Results' step failed to run correctly.\\nThis means \`test-results.json\` might be missing or the Node.js script has an error.\\n\\n
+🔍 *Action Required:*\\nPlease check the GitHub Actions logs immediately for the *'Parse Test Results'* step to see the error details.\\n\\n
+🔗 [View Failed Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+EOF
           
-          echo "$MESSAGE" > telegram-message.txt
-          echo "✅ Fallback 'telegram-message.txt' created."
+          echo "✅ Fallback message created"
         else
-          echo "✅ 'telegram-message.txt' already exists. No fallback needed."
+          echo "✅ Message file exists, no fallback needed"
         fi
-    # ⬆️⬆️⬆️ نهاية الإصلاح المضاف ⬆️⬆️⬆️
 
     - name: 🔍 Debug Secrets
       run: |
